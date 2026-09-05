@@ -418,6 +418,14 @@
     font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:999px;
     background: var(--accent-soft); color:#7ab8ff;
   }
+  .history-list{
+    display:flex; flex-direction:column; gap:6px; max-height:150px; overflow-y:auto;
+    background: var(--surface); border:1px solid var(--border); border-radius:10px; padding:10px 12px;
+  }
+  .history-row{ display:flex; align-items:baseline; gap:8px; font-size:12px; }
+  .history-row .h-label{ color:var(--text); flex:1 1 auto; }
+  .history-row .h-date{ color:var(--text-faint); font-size:11px; white-space:nowrap; flex:0 0 auto; }
+  .history-empty{ color:var(--text-faint); font-size:12px; }
 
   .readonly-note{
     font-size:12px; color:var(--text-faint); background:var(--surface); border:1px solid var(--border);
@@ -587,9 +595,14 @@
       </div>
 
       <div class="field" id="f_cierre" style="display:none;">
-        <label>Estado de cierre</label>
+        <label id="cierreLabel">Estado de cierre</label>
         <div class="cierre-seg" id="cierreSeg"></div>
         <div class="recontacto-box" id="recontactoBox" style="display:none;"></div>
+      </div>
+
+      <div class="field" id="f_history" style="display:none;">
+        <label>Historial</label>
+        <div class="history-list" id="historyList"></div>
       </div>
 
       <div class="delete-confirm" id="deleteConfirm">
@@ -678,7 +691,21 @@
     if(l.column === "cotizacion") l.column = "cotizacion_enviada";
     if(l.cierre === undefined) l.cierre = null;
     if(!l.recontacto) l.recontacto = { active:false, stage:1 };
+    if(!Array.isArray(l.history)) l.history = [{ ts: l.createdAt || new Date().toISOString(), label: "Datos migrados" }];
     return l;
+  }
+
+  // Historial automático y visible para todos: queda registrado cada cambio
+  // de etapa (incluyendo cuándo se mandó el presupuesto) y evento clave del lead.
+  function logHistory(lead, label){
+    if(!Array.isArray(lead.history)) lead.history = [];
+    lead.history.push({ ts: new Date().toISOString(), label });
+  }
+
+  function columnChangeLabel(colKey){
+    if(colKey === "cotizacion_enviada") return "Presupuesto enviado";
+    const col = COLUMNS.find(c => c.key === colKey);
+    return "Cambió a " + (col ? col.label : colKey);
   }
 
   function saveLeads(){
@@ -697,24 +724,28 @@
         id: uid(), empresa:"Global Atenas Seguridad", contacto:"Yamila Ávalos", telefono:"261 555 0101",
         rubro:"seguridad", ticket:450000, fuente:"Scraping Instagram", fechaContacto: today(),
         resultado:"positiva", notas:"Respondió bien, pedir cantidad de empleados para cotizar.",
-        column:"contactado", archived:false, createdAt: now, cierre:null, recontacto:{active:false, stage:1}
+        column:"contactado", archived:false, createdAt: now, cierre:null, recontacto:{active:false, stage:1},
+        history:[{ts:now, label:"Lead creado"}, {ts:now, label:"Cambió a Contactado"}]
       },
       {
         id: uid(), empresa:"Agrinet", contacto:"Ana Clara Rinchese", telefono:"261 555 0202",
         rubro:"otro", ticket:600000, fuente:"Mariu Lozada", fechaContacto: today(),
         resultado:"a_confirmar", notas:"Referido directo, cotización enviada por el cliente.",
-        column:"cotizacion_enviada", archived:false, createdAt: now, cierre:null, recontacto:{active:false, stage:1}
+        column:"cotizacion_enviada", archived:false, createdAt: now, cierre:null, recontacto:{active:false, stage:1},
+        history:[{ts:now, label:"Lead creado"}, {ts:now, label:"Presupuesto enviado"}]
       },
       {
         id: uid(), empresa:"Club Deportivo San Martín", contacto:"", telefono:"",
         rubro:"clubes", ticket:0, fuente:"Scraping Instagram", fechaContacto:"",
-        resultado:"sin_respuesta", notas:"", column:"nuevo", archived:false, createdAt: now, cierre:null, recontacto:{active:false, stage:1}
+        resultado:"sin_respuesta", notas:"", column:"nuevo", archived:false, createdAt: now, cierre:null, recontacto:{active:false, stage:1},
+        history:[{ts:now, label:"Lead creado"}]
       },
       {
         id: uid(), empresa:"Seguridad Ya Mendoza", contacto:"Daniel", telefono:"261 555 0303",
         rubro:"seguridad", ticket:520000, fuente:"Scraping Instagram", fechaContacto: today(),
         resultado:"positiva", notas:"Cotización enviada, pidió tiempo para evaluar. Recontactar semanalmente con novedades de stock/promos.",
-        column:"cerrado", archived:false, createdAt: now, cierre:"no_cerrado", recontacto:{active:true, stage:2}
+        column:"cerrado", archived:false, createdAt: now, cierre:"no_cerrado", recontacto:{active:true, stage:2},
+        history:[{ts:now, label:"Lead creado"}, {ts:now, label:"Presupuesto enviado"}, {ts:now, label:"Cambió a Seguimiento"}, {ts:now, label:"Cambió a Cerrado"}, {ts:now, label:"Enviado a Recontacto (semana 1)"}, {ts:now, label:"Recontacto: semana 2"}]
       },
     ];
   }
@@ -766,6 +797,17 @@
     const parts = d.split("-");
     if(parts.length !== 3) return d;
     return `${parts[2]}/${parts[1]}`;
+  }
+
+  function formatDateTime(iso){
+    if(!iso) return "";
+    const d = new Date(iso);
+    if(isNaN(d)) return "";
+    const dd = String(d.getDate()).padStart(2,"0");
+    const mm = String(d.getMonth()+1).padStart(2,"0");
+    const hh = String(d.getHours()).padStart(2,"0");
+    const mi = String(d.getMinutes()).padStart(2,"0");
+    return `${dd}/${mm} ${hh}:${mi}`;
   }
 
   function toWhatsappLink(phone){
@@ -1015,9 +1057,11 @@
       const stage = Number(targetKey.slice(1));
       if(lead.recontacto.stage === stage){ render(); return; }
       lead.recontacto.stage = stage;
+      logHistory(lead, "Recontacto: semana " + stage);
     } else {
       if(lead.column === targetKey){ render(); return; }
       lead.column = targetKey;
+      logHistory(lead, columnChangeLabel(targetKey));
     }
     saveLeads();
     state.activeMobileColumn = targetKey;
@@ -1107,7 +1151,7 @@
 
     modalTitle.textContent = isNew ? "Nuevo lead" : (isClientMode ? "Detalle del lead" : "Editar lead");
     clientNote.style.display = (isClientMode && !isNew) ? "flex" : "none";
-    document.getElementById("clientNoteText").innerHTML = "Modo Tristán: solo podés editar <b>Resultado</b>, <b>Notas</b>" + (lead && lead.column === "cerrado" ? " y el <b>estado de cierre</b>" : "") + " de este lead.";
+    document.getElementById("clientNoteText").innerHTML = "Modo Tristán: solo podés editar <b>Resultado</b>, <b>Notas</b>, <b>Fecha de contacto</b>" + (lead && (lead.column === "cerrado" || lead.column === "seguimiento") ? " y <b>Recontacto</b>" : "") + " de este lead.";
 
     fields.empresa.value = lead ? lead.empresa : "";
     fields.contacto.value = lead ? lead.contacto : "";
@@ -1120,13 +1164,14 @@
     fields.notas.value = lead ? lead.notas : "";
     fieldWraps.empresa.classList.remove("invalid");
 
-    const clientEditable = ["resultado", "notas"];
+    const clientEditable = ["resultado", "notas", "fecha"];
     Object.keys(fields).forEach(key => {
       const lockedForClient = isClientMode && !isNew && !clientEditable.includes(key);
       fields[key].disabled = lockedForClient || (isClientMode && isNew);
     });
 
-    renderCierreBlock(lead, isClientMode);
+    renderRecontactoBlock(lead, isClientMode);
+    renderHistory(lead);
 
     // Foot buttons
     let footHtml = "";
@@ -1167,18 +1212,86 @@
   }
 
   const cierreField = document.getElementById("f_cierre");
+  const cierreLabel = document.getElementById("cierreLabel");
   const cierreSeg = document.getElementById("cierreSeg");
   const recontactoBox = document.getElementById("recontactoBox");
 
-  // El tag Cerrado/No cerrado sólo aplica a leads en la última etapa: un
-  // presupuesto+seguimiento que no cerró no significa perdido, sólo que
-  // necesita recontacto (ver página Recontacto).
-  function renderCierreBlock(lead, isClientMode){
-    if(!lead || lead.column !== "cerrado"){
+  function startRecontacto(lead, isClientMode){
+    lead.cierre = "no_cerrado";
+    lead.recontacto = { active:true, stage:1 };
+    logHistory(lead, "Enviado a Recontacto (semana 1)");
+    saveLeads();
+    toast("Lead enviado a Recontacto (semana 1)");
+    renderRecontactoBlock(lead, isClientMode);
+    renderHistory(lead);
+    render();
+  }
+
+  // Cubre 3 situaciones:
+  //  1) el lead ya está en recontacto activo (venga de "Seguimiento" o de "Cerrado")
+  //  2) el lead está en "Cerrado": ahí se etiqueta Cerrado / No cerrado
+  //  3) el lead está en "Seguimiento": se puede mandar directo a recontacto,
+  //     sin pasar por "Cerrado", porque claramente todavía no se cerró.
+  function renderRecontactoBlock(lead, isClientMode){
+    const relevant = lead && (["cerrado","seguimiento"].includes(lead.column) || (lead.recontacto && lead.recontacto.active));
+    if(!relevant){
       cierreField.style.display = "none";
       return;
     }
     cierreField.style.display = "block";
+
+    if(lead.recontacto.active){
+      cierreLabel.textContent = "Recontacto";
+      cierreSeg.innerHTML = "";
+      recontactoBox.style.display = "flex";
+      recontactoBox.innerHTML = `
+        <span class="rc-info">En recontacto: <b>semana ${lead.recontacto.stage} de 8</b></span>
+        <button type="button" class="btn btn-ghost" id="rcViewBtn">Ver en Recontacto</button>
+        <button type="button" class="btn btn-accent" id="rcCloseBtn">Marcar cerrado (ganado)</button>
+        <button type="button" class="btn btn-ghost" id="rcStopBtn">Sacar de recontacto</button>
+      `;
+      document.getElementById("rcViewBtn").addEventListener("click", () => {
+        closeLeadModal();
+        state.page = "recontacto";
+        state.activeMobileColumn = "r" + lead.recontacto.stage;
+        render();
+      });
+      document.getElementById("rcCloseBtn").addEventListener("click", () => {
+        lead.column = "cerrado";
+        lead.cierre = "cerrado";
+        lead.recontacto.active = false;
+        logHistory(lead, "Cerrado (ganado) desde Recontacto");
+        saveLeads();
+        toast("Lead marcado como cerrado");
+        renderRecontactoBlock(lead, isClientMode);
+        renderHistory(lead);
+        render();
+      });
+      document.getElementById("rcStopBtn").addEventListener("click", () => {
+        lead.recontacto.active = false;
+        logHistory(lead, "Sacado de Recontacto");
+        saveLeads();
+        renderRecontactoBlock(lead, isClientMode);
+        renderHistory(lead);
+        render();
+      });
+      return;
+    }
+
+    if(lead.column === "seguimiento"){
+      cierreLabel.textContent = "Recontacto";
+      cierreSeg.innerHTML = "";
+      recontactoBox.style.display = "flex";
+      recontactoBox.innerHTML = `
+        <span class="rc-info">Si todavía no cerró, lo podés mandar a recontacto sin esperar a la etapa Cerrado.</span>
+        <button type="button" class="btn btn-accent" id="rcStartBtn">Enviar a recontacto</button>
+      `;
+      document.getElementById("rcStartBtn").addEventListener("click", () => startRecontacto(lead, isClientMode));
+      return;
+    }
+
+    // lead.column === "cerrado" y sin recontacto activo: tag Cerrado / No cerrado.
+    cierreLabel.textContent = "Estado de cierre";
     const opts = [
       { value:"cerrado",    label:"Cerrado" },
       { value:"no_cerrado", label:"No cerrado" },
@@ -1189,51 +1302,43 @@
     }).join("");
     cierreSeg.querySelectorAll(".cierre-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        lead.cierre = lead.cierre === btn.dataset.value ? null : btn.dataset.value;
-        if(lead.cierre !== "no_cerrado" && lead.recontacto.active){
-          lead.recontacto.active = false;
-        }
+        const newValue = lead.cierre === btn.dataset.value ? null : btn.dataset.value;
+        lead.cierre = newValue;
+        logHistory(lead, newValue ? ("Marcado como " + CIERRE_LABELS[newValue]) : "Estado de cierre sin definir");
         saveLeads();
-        renderCierreBlock(lead, isClientMode);
+        renderRecontactoBlock(lead, isClientMode);
+        renderHistory(lead);
       });
     });
 
     if(lead.cierre === "no_cerrado"){
       recontactoBox.style.display = "flex";
-      if(lead.recontacto.active){
-        recontactoBox.innerHTML = `
-          <span class="rc-info">En recontacto: <b>semana ${lead.recontacto.stage} de 8</b></span>
-          <button type="button" class="btn btn-ghost" id="rcViewBtn">Ver en Recontacto</button>
-          <button type="button" class="btn btn-ghost" id="rcStopBtn">Sacar de recontacto</button>
-        `;
-        document.getElementById("rcViewBtn").addEventListener("click", () => {
-          closeLeadModal();
-          state.page = "recontacto";
-          state.activeMobileColumn = "r" + lead.recontacto.stage;
-          render();
-        });
-        document.getElementById("rcStopBtn").addEventListener("click", () => {
-          lead.recontacto.active = false;
-          saveLeads();
-          renderCierreBlock(lead, isClientMode);
-          render();
-        });
-      } else {
-        recontactoBox.innerHTML = `
-          <span class="rc-info">Presupuestado y con seguimiento, pero no cerró todavía.</span>
-          <button type="button" class="btn btn-accent" id="rcStartBtn">Enviar a recontacto</button>
-        `;
-        document.getElementById("rcStartBtn").addEventListener("click", () => {
-          lead.recontacto = { active:true, stage:1 };
-          saveLeads();
-          toast("Lead enviado a Recontacto (semana 1)");
-          renderCierreBlock(lead, isClientMode);
-          render();
-        });
-      }
+      recontactoBox.innerHTML = `
+        <span class="rc-info">Presupuestado y con seguimiento, pero no cerró todavía.</span>
+        <button type="button" class="btn btn-accent" id="rcStartBtn">Enviar a recontacto</button>
+      `;
+      document.getElementById("rcStartBtn").addEventListener("click", () => startRecontacto(lead, isClientMode));
     } else {
       recontactoBox.style.display = "none";
     }
+  }
+
+  const historyField = document.getElementById("f_history");
+  const historyList = document.getElementById("historyList");
+
+  function renderHistory(lead){
+    if(!lead || !Array.isArray(lead.history) || !lead.history.length){
+      historyField.style.display = "none";
+      return;
+    }
+    historyField.style.display = "block";
+    const rows = lead.history.slice().reverse();
+    historyList.innerHTML = rows.map(h => `
+      <div class="history-row">
+        <span class="h-label">${escapeHtml(h.label)}</span>
+        <span class="h-date">${formatDateTime(h.ts)}</span>
+      </div>
+    `).join("");
   }
 
   function closeLeadModal(){
@@ -1252,6 +1357,7 @@
     fieldWraps.empresa.classList.remove("invalid");
 
     if(isNew){
+      const now = new Date().toISOString();
       const lead = {
         id: uid(),
         empresa: fields.empresa.value.trim(),
@@ -1265,7 +1371,10 @@
         notas: fields.notas.value.trim(),
         column: "nuevo",
         archived: false,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
+        cierre: null,
+        recontacto: { active:false, stage:1 },
+        history: [{ ts: now, label: "Lead creado" }],
       };
       state.leads.push(lead);
       saveLeads();
@@ -1276,6 +1385,7 @@
       if(isClientMode){
         lead.resultado = fields.resultado.value;
         lead.notas = fields.notas.value.trim();
+        lead.fechaContacto = fields.fecha.value;
       } else {
         lead.empresa = fields.empresa.value.trim();
         lead.contacto = fields.contacto.value.trim();
