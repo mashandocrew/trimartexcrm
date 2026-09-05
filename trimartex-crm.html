@@ -124,6 +124,12 @@
   }
   .mode-toggle button.active{ background: var(--accent); color:#fff; box-shadow: 0 2px 6px rgba(10,132,255,0.4); }
   .mode-toggle button:not(.active):hover{ color:var(--text); }
+  .pill-count{
+    display:inline-flex; align-items:center; justify-content:center;
+    min-width:16px; height:16px; padding:0 4px; margin-left:5px;
+    background: rgba(255,69,58,0.9); color:#fff; font-size:10px; font-weight:700; border-radius:999px;
+    vertical-align: middle;
+  }
 
   .btn-primary{
     display:flex; align-items:center; gap:6px;
@@ -383,6 +389,36 @@
   .delete-confirm span{ flex:1 1 auto; }
   .delete-confirm .btn{ padding:7px 11px; font-size:12.5px; flex:0 0 auto; }
 
+  .cierre-seg{ display:flex; gap:8px; }
+  .cierre-btn{
+    flex:1 1 0; border:1px solid var(--border); background:var(--surface); color:var(--text-dim);
+    border-radius:10px; padding:9px 8px; font-size:12.5px; font-weight:650; cursor:pointer;
+    transition: all .15s ease; text-align:center;
+  }
+  .cierre-btn:hover{ background:var(--surface-2); }
+  .cierre-btn.active-cerrado{ background: var(--positive-soft); border-color: rgba(48,209,88,0.4); color:#5fe083; }
+  .cierre-btn.active-no_cerrado{ background: var(--warn-soft); border-color: rgba(255,214,10,0.4); color:#f4d24e; }
+  .recontacto-box{
+    margin-top:10px; background:var(--surface); border:1px solid var(--border); border-radius:11px; padding:11px 12px;
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  }
+  .recontacto-box .rc-info{ flex:1 1 auto; font-size:12.5px; color:var(--text-dim); min-width:140px; }
+  .recontacto-box .rc-info b{ color:var(--text); }
+  .recontacto-box .btn{ padding:8px 12px; font-size:12.5px; }
+  .card-cierre-pill{ font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:999px; }
+  .cierre-cerrado{ background: var(--positive-soft); color:#5fe083; }
+  .cierre-no_cerrado{ background: var(--warn-soft); color:#f4d24e; }
+  .cierre-pendiente{ background: rgba(150,150,160,0.14); color:#a9a9b0; }
+  .card-notes-preview{
+    font-size:11.5px; color:var(--text-dim); background:rgba(255,255,255,0.03); border:1px solid var(--border-soft);
+    border-radius:8px; padding:7px 9px; margin-top:8px; line-height:1.4;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .rc-stage-badge{
+    font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:999px;
+    background: var(--accent-soft); color:#7ab8ff;
+  }
+
   .readonly-note{
     font-size:12px; color:var(--text-faint); background:var(--surface); border:1px solid var(--border);
     border-radius:10px; padding:9px 11px; margin-bottom:14px; display:flex; gap:8px; align-items:flex-start;
@@ -449,9 +485,14 @@
 
     <div class="spacer"></div>
 
+    <div class="mode-toggle" id="pageToggle">
+      <button data-page="pipeline" class="active">Pipeline</button>
+      <button data-page="recontacto">Recontacto<span class="pill-count" id="recontactoCount" style="display:none;">0</span></button>
+    </div>
+
     <div class="mode-toggle" id="modeToggle">
-      <button data-mode="sr" class="active">Sr.</button>
-      <button data-mode="cliente">Cliente</button>
+      <button data-mode="joaquin" class="active">Joaquín</button>
+      <button data-mode="tristan">Tristán</button>
     </div>
 
     <button class="icon-btn" id="archiveBtn" title="Archivados">
@@ -482,7 +523,7 @@
     <div class="modal-body" id="modalBody">
       <div class="readonly-note" id="clientNote" style="display:none;">
         <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="M12 8v5M12 16h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        <span>Modo Cliente: solo podés editar <b>Resultado</b> y <b>Notas</b> de este lead.</span>
+        <span id="clientNoteText"></span>
       </div>
 
       <div class="field" id="f_empresa">
@@ -545,6 +586,12 @@
         <textarea id="in_notas" placeholder="Observaciones, próximos pasos..."></textarea>
       </div>
 
+      <div class="field" id="f_cierre" style="display:none;">
+        <label>Estado de cierre</label>
+        <div class="cierre-seg" id="cierreSeg"></div>
+        <div class="recontacto-box" id="recontactoBox" style="display:none;"></div>
+      </div>
+
       <div class="delete-confirm" id="deleteConfirm">
         <span>¿Eliminar este lead? No se puede deshacer.</span>
         <button class="btn btn-ghost" id="cancelDeleteBtn">Cancelar</button>
@@ -579,13 +626,21 @@
   const MODE_KEY = "trimartex_crm_mode_v1";
 
   const COLUMNS = [
-    { key:"nuevo",        label:"Nuevo",              color:"#8e8e93" },
-    { key:"contactado",   label:"Contactado",         color:"#0a84ff" },
-    { key:"cotizacion",   label:"Cotización enviada", color:"#ffd60a" },
-    { key:"seguimiento",  label:"Seguimiento",        color:"#ff9f0a" },
-    { key:"cerrado",      label:"Cerrado / Perdido",  color:"#30d158" },
+    { key:"nuevo",               label:"Nuevo",               color:"#8e8e93" },
+    { key:"contactado",          label:"Contactado",          color:"#0a84ff" },
+    { key:"cotizacion_pendiente",label:"Cotización pendiente",color:"#ff9f0a" },
+    { key:"cotizacion_enviada",  label:"Cotización enviada",  color:"#ffd60a" },
+    { key:"seguimiento",         label:"Seguimiento",         color:"#5ac8fa" },
+    { key:"cerrado",             label:"Cerrado",             color:"#30d158" },
   ];
-  const CLIENT_VISIBLE = ["cotizacion","seguimiento","cerrado"];
+  // Primera etapa que ve Tristán = "Cotización pendiente": ahí Joaquín deja los leads listos para cotizar.
+  const TRISTAN_VISIBLE = ["cotizacion_pendiente","cotizacion_enviada","seguimiento","cerrado"];
+
+  const RECONTACTO_STAGES = Array.from({length:8}, (_,i) => ({
+    key: "r" + (i+1), label: "Recontacto " + (i+1), color: "#0a84ff"
+  }));
+
+  const CIERRE_LABELS = { cerrado:"Cerrado", no_cerrado:"No cerrado" };
 
   const RUBROS = {
     seguridad:  "Seguridad",
@@ -611,11 +666,19 @@
       if(!raw) return seedDemoData();
       const parsed = JSON.parse(raw);
       if(!Array.isArray(parsed)) return [];
-      return parsed;
+      return parsed.map(migrateLead);
     }catch(e){
       console.error("No se pudo leer localStorage", e);
       return [];
     }
+  }
+
+  // Compatibilidad con datos guardados por versiones anteriores del CRM.
+  function migrateLead(l){
+    if(l.column === "cotizacion") l.column = "cotizacion_enviada";
+    if(l.cierre === undefined) l.cierre = null;
+    if(!l.recontacto) l.recontacto = { active:false, stage:1 };
+    return l;
   }
 
   function saveLeads(){
@@ -634,18 +697,24 @@
         id: uid(), empresa:"Global Atenas Seguridad", contacto:"Yamila Ávalos", telefono:"261 555 0101",
         rubro:"seguridad", ticket:450000, fuente:"Scraping Instagram", fechaContacto: today(),
         resultado:"positiva", notas:"Respondió bien, pedir cantidad de empleados para cotizar.",
-        column:"contactado", archived:false, createdAt: now
+        column:"contactado", archived:false, createdAt: now, cierre:null, recontacto:{active:false, stage:1}
       },
       {
         id: uid(), empresa:"Agrinet", contacto:"Ana Clara Rinchese", telefono:"261 555 0202",
         rubro:"otro", ticket:600000, fuente:"Mariu Lozada", fechaContacto: today(),
         resultado:"a_confirmar", notas:"Referido directo, cotización enviada por el cliente.",
-        column:"cotizacion", archived:false, createdAt: now
+        column:"cotizacion_enviada", archived:false, createdAt: now, cierre:null, recontacto:{active:false, stage:1}
       },
       {
         id: uid(), empresa:"Club Deportivo San Martín", contacto:"", telefono:"",
         rubro:"clubes", ticket:0, fuente:"Scraping Instagram", fechaContacto:"",
-        resultado:"sin_respuesta", notas:"", column:"nuevo", archived:false, createdAt: now
+        resultado:"sin_respuesta", notas:"", column:"nuevo", archived:false, createdAt: now, cierre:null, recontacto:{active:false, stage:1}
+      },
+      {
+        id: uid(), empresa:"Seguridad Ya Mendoza", contacto:"Daniel", telefono:"261 555 0303",
+        rubro:"seguridad", ticket:520000, fuente:"Scraping Instagram", fechaContacto: today(),
+        resultado:"positiva", notas:"Cotización enviada, pidió tiempo para evaluar. Recontactar semanalmente con novedades de stock/promos.",
+        column:"cerrado", archived:false, createdAt: now, cierre:"no_cerrado", recontacto:{active:true, stage:2}
       },
     ];
   }
@@ -655,20 +724,29 @@
   }
 
   /* ============ App state ============ */
+  function migrateModeValue(v){
+    if(v === "sr") return "joaquin";
+    if(v === "cliente") return "tristan";
+    return v;
+  }
+
   const state = {
     leads: loadLeads(),
-    mode: localStorage.getItem(MODE_KEY) || "sr",
+    mode: migrateModeValue(localStorage.getItem(MODE_KEY)) || "joaquin",
+    page: "pipeline", // "pipeline" | "recontacto"
     search: "",
     activeMobileColumn: null,
     editingId: null,
   };
 
   saveLeads();
-  state.activeMobileColumn = visibleColumns()[0].key;
+  localStorage.setItem(MODE_KEY, state.mode);
+  state.activeMobileColumn = currentColumns()[0].key;
 
-  function visibleColumns(){
-    return state.mode === "cliente"
-      ? COLUMNS.filter(c => CLIENT_VISIBLE.includes(c.key))
+  function currentColumns(){
+    if(state.page === "recontacto") return RECONTACTO_STAGES;
+    return state.mode === "tristan"
+      ? COLUMNS.filter(c => TRISTAN_VISIBLE.includes(c.key))
       : COLUMNS;
   }
 
@@ -721,22 +799,57 @@
            (RUBROS[lead.rubro]||"").toLowerCase().includes(q);
   }
 
+  // Leads visibles en el pipeline principal: no archivados y sin recontacto activo
+  // (una vez enviado a Recontacto, el lead se gestiona sólo desde esa página).
+  function leadsForPipelineColumn(colKey){
+    return state.leads.filter(l =>
+      !l.archived && !(l.recontacto && l.recontacto.active) &&
+      l.column === colKey && matchesSearch(l, state.search)
+    );
+  }
+
+  function leadsForRecontactoStage(stageNum){
+    return state.leads.filter(l =>
+      !l.archived && l.recontacto && l.recontacto.active &&
+      l.recontacto.stage === stageNum && matchesSearch(l, state.search)
+    );
+  }
+
+  function leadsForColumn(colKey){
+    return state.page === "recontacto"
+      ? leadsForRecontactoStage(Number(colKey.slice(1)))
+      : leadsForPipelineColumn(colKey);
+  }
+
+  function activeRecontactoCount(){
+    return state.leads.filter(l => !l.archived && l.recontacto && l.recontacto.active).length;
+  }
+
   /* ============ Rendering ============ */
   const boardEl = document.getElementById("board");
   const mobileTabsEl = document.getElementById("mobileTabs");
 
   function render(){
+    renderPageToggle();
+    applyModeUI();
     renderMobileTabs();
     renderBoard();
   }
 
+  function renderPageToggle(){
+    pageToggle.querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.page === state.page));
+    const n = activeRecontactoCount();
+    recontactoCountEl.style.display = n > 0 ? "inline-flex" : "none";
+    recontactoCountEl.textContent = n;
+  }
+
   function renderMobileTabs(){
-    const cols = visibleColumns();
+    const cols = currentColumns();
     if(!cols.find(c => c.key === state.activeMobileColumn)){
       state.activeMobileColumn = cols[0].key;
     }
     mobileTabsEl.innerHTML = cols.map(c => {
-      const count = state.leads.filter(l => !l.archived && l.column === c.key && matchesSearch(l, state.search)).length;
+      const count = leadsForColumn(c.key).length;
       const active = c.key === state.activeMobileColumn ? "active" : "";
       return `<button class="mobile-tab ${active}" data-column="${c.key}">
         ${escapeHtml(c.label)} <span class="count">${count}</span>
@@ -752,10 +865,12 @@
   }
 
   function renderBoard(){
-    const cols = visibleColumns();
+    const cols = currentColumns();
+    const isRecontacto = state.page === "recontacto";
     boardEl.innerHTML = cols.map(c => {
-      const leads = state.leads.filter(l => !l.archived && l.column === c.key && matchesSearch(l, state.search));
+      const leads = leadsForColumn(c.key);
       const activeClass = c.key === state.activeMobileColumn ? "mobile-active" : "";
+      const emptyMsg = isRecontacto ? "Sin leads en recontacto acá." : `Sin leads acá${state.search ? " para esta búsqueda" : ""}.`;
       return `
       <section class="column ${activeClass}" data-column="${c.key}">
         <div class="column-head">
@@ -764,7 +879,7 @@
           <span class="column-count">${leads.length}</span>
         </div>
         <div class="column-body" data-column="${c.key}">
-          ${leads.length ? leads.map(cardHtml).join("") : `<div class="column-empty">Sin leads acá${state.search ? " para esta búsqueda" : ""}.</div>`}
+          ${leads.length ? leads.map(l => cardHtml(l, isRecontacto)).join("") : `<div class="column-empty">${emptyMsg}</div>`}
         </div>
       </section>`;
     }).join("");
@@ -778,7 +893,14 @@
     });
   }
 
-  function cardHtml(lead){
+  function cierrePillHtml(lead){
+    if(lead.column !== "cerrado") return "";
+    const cls = lead.cierre ? "cierre-" + lead.cierre : "cierre-pendiente";
+    const label = lead.cierre ? CIERRE_LABELS[lead.cierre] : "Sin definir";
+    return `<span class="card-cierre-pill ${cls}">${escapeHtml(label)}</span>`;
+  }
+
+  function cardHtml(lead, isRecontacto){
     const wa = toWhatsappLink(lead.telefono);
     return `
     <article class="lead-card" data-id="${lead.id}">
@@ -792,7 +914,9 @@
       <div class="card-mid">
         <span class="card-ticket">${formatARS(lead.ticket)}</span>
         <span class="result-pill result-${lead.resultado}">${escapeHtml(RESULTADOS[lead.resultado] || "Sin respuesta")}</span>
+        ${isRecontacto ? `<span class="rc-stage-badge">Semana ${lead.recontacto.stage}/8</span>` : cierrePillHtml(lead)}
       </div>
+      ${isRecontacto && lead.notas ? `<div class="card-notes-preview">${escapeHtml(lead.notas)}</div>` : ""}
       <div class="card-bottom">
         <span class="card-meta">${lead.fuente ? escapeHtml(lead.fuente) : "&nbsp;"}${lead.fechaContacto ? " · " + formatDate(lead.fechaContacto) : ""}</span>
         <a class="wa-btn ${wa ? "" : "disabled"}" href="${wa || "#"}" target="_blank" rel="noopener noreferrer" title="Abrir WhatsApp" onclick="event.stopPropagation()">
@@ -821,7 +945,7 @@
     const target = el.closest(".column-body, .mobile-tab");
     if(!target) return null;
     const col = target.dataset.column;
-    if(state.mode === "cliente" && !CLIENT_VISIBLE.includes(col)) return null;
+    if(state.page === "pipeline" && state.mode === "tristan" && !TRISTAN_VISIBLE.includes(col)) return null;
     return target;
   }
 
@@ -870,7 +994,7 @@
           if(ghost){ ghost.remove(); ghost = null; }
           cardEl.classList.remove("dragging");
           if(target){
-            moveLeadToColumn(cardEl.dataset.id, target.dataset.column);
+            moveCard(cardEl.dataset.id, target.dataset.column);
           } else {
             render();
           }
@@ -883,13 +1007,20 @@
     });
   }
 
-  function moveLeadToColumn(id, columnKey){
+  function moveCard(id, targetKey){
     const lead = state.leads.find(l => l.id === id);
     if(!lead) return;
-    if(lead.column === columnKey){ render(); return; }
-    lead.column = columnKey;
+
+    if(state.page === "recontacto"){
+      const stage = Number(targetKey.slice(1));
+      if(lead.recontacto.stage === stage){ render(); return; }
+      lead.recontacto.stage = stage;
+    } else {
+      if(lead.column === targetKey){ render(); return; }
+      lead.column = targetKey;
+    }
     saveLeads();
-    state.activeMobileColumn = columnKey;
+    state.activeMobileColumn = targetKey;
     render();
     const justMoved = boardEl.querySelector(`.lead-card[data-id="${id}"]`);
     if(justMoved) justMoved.classList.add("drop-in");
@@ -907,15 +1038,17 @@
     searchInput.value = ""; state.search = ""; searchClear.style.display = "none"; render(); searchInput.focus();
   });
 
-  /* ============ Mode toggle ============ */
+  /* ============ Mode & page toggles ============ */
   const modeToggle = document.getElementById("modeToggle");
+  const pageToggle = document.getElementById("pageToggle");
+  const recontactoCountEl = document.getElementById("recontactoCount");
   const newLeadBtn = document.getElementById("newLeadBtn");
   const archiveBtn = document.getElementById("archiveBtn");
 
   function applyModeUI(){
     modeToggle.querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.mode === state.mode));
-    newLeadBtn.style.display = state.mode === "sr" ? "flex" : "none";
-    archiveBtn.style.display = state.mode === "sr" ? "flex" : "none";
+    newLeadBtn.style.display = (state.mode === "joaquin" && state.page === "pipeline") ? "flex" : "none";
+    archiveBtn.style.display = state.mode === "joaquin" ? "flex" : "none";
   }
 
   modeToggle.addEventListener("click", (e) => {
@@ -923,8 +1056,15 @@
     if(!btn) return;
     state.mode = btn.dataset.mode;
     localStorage.setItem(MODE_KEY, state.mode);
-    state.activeMobileColumn = visibleColumns()[0].key;
-    applyModeUI();
+    state.activeMobileColumn = currentColumns()[0].key;
+    render();
+  });
+
+  pageToggle.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-page]");
+    if(!btn) return;
+    state.page = btn.dataset.page;
+    state.activeMobileColumn = currentColumns()[0].key;
     render();
   });
 
@@ -961,12 +1101,13 @@
   function openLeadModal(id){
     state.editingId = id || null;
     deleteConfirm.classList.remove("show");
-    const isClientMode = state.mode === "cliente";
+    const isClientMode = state.mode === "tristan";
     const isNew = !id;
     const lead = id ? state.leads.find(l => l.id === id) : null;
 
     modalTitle.textContent = isNew ? "Nuevo lead" : (isClientMode ? "Detalle del lead" : "Editar lead");
     clientNote.style.display = (isClientMode && !isNew) ? "flex" : "none";
+    document.getElementById("clientNoteText").innerHTML = "Modo Tristán: solo podés editar <b>Resultado</b>, <b>Notas</b>" + (lead && lead.column === "cerrado" ? " y el <b>estado de cierre</b>" : "") + " de este lead.";
 
     fields.empresa.value = lead ? lead.empresa : "";
     fields.contacto.value = lead ? lead.contacto : "";
@@ -984,6 +1125,8 @@
       const lockedForClient = isClientMode && !isNew && !clientEditable.includes(key);
       fields[key].disabled = lockedForClient || (isClientMode && isNew);
     });
+
+    renderCierreBlock(lead, isClientMode);
 
     // Foot buttons
     let footHtml = "";
@@ -1021,6 +1164,76 @@
 
     leadOverlay.classList.add("open");
     setTimeout(() => { if(!fields.empresa.disabled) fields.empresa.focus(); }, 60);
+  }
+
+  const cierreField = document.getElementById("f_cierre");
+  const cierreSeg = document.getElementById("cierreSeg");
+  const recontactoBox = document.getElementById("recontactoBox");
+
+  // El tag Cerrado/No cerrado sólo aplica a leads en la última etapa: un
+  // presupuesto+seguimiento que no cerró no significa perdido, sólo que
+  // necesita recontacto (ver página Recontacto).
+  function renderCierreBlock(lead, isClientMode){
+    if(!lead || lead.column !== "cerrado"){
+      cierreField.style.display = "none";
+      return;
+    }
+    cierreField.style.display = "block";
+    const opts = [
+      { value:"cerrado",    label:"Cerrado" },
+      { value:"no_cerrado", label:"No cerrado" },
+    ];
+    cierreSeg.innerHTML = opts.map(o => {
+      const active = lead.cierre === o.value ? "active-" + o.value : "";
+      return `<button type="button" class="cierre-btn ${active}" data-value="${o.value}">${o.label}</button>`;
+    }).join("");
+    cierreSeg.querySelectorAll(".cierre-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        lead.cierre = lead.cierre === btn.dataset.value ? null : btn.dataset.value;
+        if(lead.cierre !== "no_cerrado" && lead.recontacto.active){
+          lead.recontacto.active = false;
+        }
+        saveLeads();
+        renderCierreBlock(lead, isClientMode);
+      });
+    });
+
+    if(lead.cierre === "no_cerrado"){
+      recontactoBox.style.display = "flex";
+      if(lead.recontacto.active){
+        recontactoBox.innerHTML = `
+          <span class="rc-info">En recontacto: <b>semana ${lead.recontacto.stage} de 8</b></span>
+          <button type="button" class="btn btn-ghost" id="rcViewBtn">Ver en Recontacto</button>
+          <button type="button" class="btn btn-ghost" id="rcStopBtn">Sacar de recontacto</button>
+        `;
+        document.getElementById("rcViewBtn").addEventListener("click", () => {
+          closeLeadModal();
+          state.page = "recontacto";
+          state.activeMobileColumn = "r" + lead.recontacto.stage;
+          render();
+        });
+        document.getElementById("rcStopBtn").addEventListener("click", () => {
+          lead.recontacto.active = false;
+          saveLeads();
+          renderCierreBlock(lead, isClientMode);
+          render();
+        });
+      } else {
+        recontactoBox.innerHTML = `
+          <span class="rc-info">Presupuestado y con seguimiento, pero no cerró todavía.</span>
+          <button type="button" class="btn btn-accent" id="rcStartBtn">Enviar a recontacto</button>
+        `;
+        document.getElementById("rcStartBtn").addEventListener("click", () => {
+          lead.recontacto = { active:true, stage:1 };
+          saveLeads();
+          toast("Lead enviado a Recontacto (semana 1)");
+          renderCierreBlock(lead, isClientMode);
+          render();
+        });
+      }
+    } else {
+      recontactoBox.style.display = "none";
+    }
   }
 
   function closeLeadModal(){
@@ -1139,7 +1352,6 @@
   });
 
   /* ============ Init ============ */
-  applyModeUI();
   render();
 
 })();
