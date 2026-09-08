@@ -222,6 +222,43 @@
   .mobile-tab.active .count{ background: rgba(255,255,255,0.25); color:#fff; }
   .mobile-tab.drop-hover{ transform: scale(1.08); border-color: var(--positive); background: var(--positive-soft); }
 
+  /* ---------- Cartera ---------- */
+  .cartera-filters{
+    flex: 0 0 auto;
+    display:none;
+    gap: 8px;
+    padding: 10px 16px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .cartera-filters::-webkit-scrollbar{ display:none; }
+  .cartera-list-wrap{ height:100%; overflow-y:auto; padding: 16px; }
+  .cartera-list{ max-width:900px; margin:0 auto; display:flex; flex-direction:column; gap:10px; }
+  .cliente-card{
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    display:flex; align-items:center; gap:12px;
+    cursor:pointer;
+    transition: border-color .15s ease;
+  }
+  .cliente-card:hover{ border-color: #38383d; }
+  .cliente-main{ flex:1 1 auto; min-width:0; }
+  .cliente-company{ font-size:14px; font-weight:650; letter-spacing:-0.01em; }
+  .cliente-sub{ font-size:12px; color:var(--text-dim); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cliente-rubro-tag{
+    flex:0 0 auto; font-size:10.5px; font-weight:700; letter-spacing:.02em;
+    padding: 3px 8px; border-radius: 999px; white-space:nowrap;
+    background: rgba(150,150,160,0.16); color:#b8b8c0;
+  }
+  .estado-pill{ flex:0 0 auto; font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:999px; white-space:nowrap; }
+  .estado-activo{ background: var(--positive-soft); color:#5fe083; }
+  .estado-inactivo{ background: rgba(150,150,160,0.14); color:#a9a9b0; }
+  .cliente-empty{ text-align:center; color:var(--text-faint); font-size:13px; padding:40px 10px; }
+
   /* ---------- Board ---------- */
   main.board-wrap{ flex: 1 1 auto; overflow: hidden; position:relative; }
   .board{
@@ -528,6 +565,7 @@
     <div class="mode-toggle" id="pageToggle">
       <button data-page="pipeline" class="active">Pipeline</button>
       <button data-page="recontacto">Recontacto<span class="pill-count" id="recontactoCount" style="display:none;">0</span></button>
+      <button data-page="cartera">Cartera<span class="pill-count" id="carteraCount" style="display:none;">0</span></button>
     </div>
 
     <div class="user-badge" id="userBadge" title="">
@@ -548,12 +586,18 @@
       <span>Nuevo lead</span>
     </button>
 
+    <button class="btn-primary" id="newClienteBtn" style="display:none;">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+      <span>Nuevo cliente</span>
+    </button>
+
     <button class="icon-btn" id="logoutBtn" title="Cerrar sesión">
       <svg viewBox="0 0 24 24" fill="none"><path d="M15 17l5-5-5-5M20 12H9M12 19H6a1 1 0 01-1-1V6a1 1 0 011-1h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
   </header>
 
   <nav class="mobile-tabs" id="mobileTabs"></nav>
+  <nav class="cartera-filters" id="carteraFilters" style="display:none;"></nav>
 
   <main class="board-wrap">
     <div class="board" id="board"></div>
@@ -652,6 +696,56 @@
       </div>
     </div>
     <div class="modal-foot" id="modalFoot"></div>
+  </div>
+</div>
+
+<!-- Cliente modal (Cartera) -->
+<div class="overlay" id="clienteOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="clienteModalTitle">Nuevo cliente</h2>
+      <button class="modal-close" id="clienteModalCloseBtn"><svg viewBox="0 0 24 24" fill="none"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+    </div>
+    <div class="modal-body" id="clienteModalBody">
+      <div class="field" id="cf_empresa">
+        <label>Empresa <span class="req">*</span></label>
+        <input type="text" id="cin_empresa" placeholder="Ej: Nuss">
+        <div class="field-error">La empresa es obligatoria.</div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>Nombre de contacto</label>
+          <input type="text" id="cin_contacto" placeholder="Ej: Gonzalo Valdemoros">
+        </div>
+        <div class="field">
+          <label>Teléfono</label>
+          <input type="tel" id="cin_telefono" placeholder="Ej: 261 555 1234">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Rubro</label>
+        <input type="text" id="cin_rubro" placeholder="Ej: Cafetería, Seguridad, Gimnasio...">
+      </div>
+
+      <div class="field">
+        <label>Estado</label>
+        <div class="cierre-seg" id="clienteEstadoSeg"></div>
+      </div>
+
+      <div class="field">
+        <label>Notas</label>
+        <textarea id="cin_notas" placeholder="Observaciones..."></textarea>
+      </div>
+
+      <div class="delete-confirm" id="clienteDeleteConfirm">
+        <span>¿Eliminar este cliente de la cartera? No queda en papelera.</span>
+        <button class="btn btn-ghost" id="clienteCancelDeleteBtn">Cancelar</button>
+        <button class="btn btn-danger-solid" id="clienteConfirmDeleteBtn">Eliminar</button>
+      </div>
+    </div>
+    <div class="modal-foot" id="clienteModalFoot"></div>
   </div>
 </div>
 
@@ -756,14 +850,23 @@
     return !!(lead.recontacto_active && lead.recontacto_next_date && lead.recontacto_next_date < today());
   }
 
+  const CARTERA_FILTERS = [
+    { key:"todos",    label:"Todos" },
+    { key:"activo",   label:"Activos" },
+    { key:"inactivo", label:"Inactivos" },
+  ];
+
   /* ============ App state ============ */
   const state = {
     leads: [],
+    clientes: [],
     mode: "joaquin",        // asignado automáticamente por email al loguearse
-    page: "pipeline",       // "pipeline" | "recontacto"
+    page: "pipeline",       // "pipeline" | "recontacto" | "cartera"
     search: "",
+    carteraFilter: "todos", // "todos" | "activo" | "inactivo"
     activeMobileColumn: null,
     editingId: null,
+    editingClienteId: null,
     session: null,
     userRow: null,          // { email, rol }
     historyCache: {},       // leadId -> lead_history[]
@@ -862,15 +965,48 @@
     return state.leads.filter(l => !l.archived && l.recontacto_active).length;
   }
 
+  function matchesSearchCliente(c, q){
+    if(!q) return true;
+    q = q.toLowerCase();
+    return (c.empresa||"").toLowerCase().includes(q) ||
+           (c.contacto||"").toLowerCase().includes(q) ||
+           (c.rubro||"").toLowerCase().includes(q);
+  }
+
+  function clientesFiltered(){
+    return state.clientes.filter(c =>
+      (state.carteraFilter === "todos" || c.estado === state.carteraFilter) &&
+      matchesSearchCliente(c, state.search)
+    );
+  }
+
+  function carteraCounts(){
+    return {
+      todos: state.clientes.length,
+      activo: state.clientes.filter(c => c.estado === "activo").length,
+      inactivo: state.clientes.filter(c => c.estado === "inactivo").length,
+    };
+  }
+
   /* ============ Rendering ============ */
   const boardEl = document.getElementById("board");
   const mobileTabsEl = document.getElementById("mobileTabs");
+  const carteraFiltersEl = document.getElementById("carteraFilters");
 
   function render(){
     renderPageToggle();
     applyModeUI();
-    renderMobileTabs();
-    renderBoard();
+    if(state.page === "cartera"){
+      mobileTabsEl.style.display = "none";
+      carteraFiltersEl.style.display = "flex";
+      renderCarteraFilters();
+      renderCarteraBoard();
+    } else {
+      carteraFiltersEl.style.display = "none";
+      mobileTabsEl.style.display = "";
+      renderMobileTabs();
+      renderBoard();
+    }
   }
 
   function renderPageToggle(){
@@ -878,6 +1014,56 @@
     const n = activeRecontactoCount();
     recontactoCountEl.style.display = n > 0 ? "inline-flex" : "none";
     recontactoCountEl.textContent = n;
+    const total = state.clientes.length;
+    carteraCountEl.style.display = total > 0 ? "inline-flex" : "none";
+    carteraCountEl.textContent = total;
+  }
+
+  function renderCarteraFilters(){
+    const counts = carteraCounts();
+    carteraFiltersEl.innerHTML = CARTERA_FILTERS.map(f => {
+      const active = f.key === state.carteraFilter ? "active" : "";
+      return `<button class="mobile-tab ${active}" data-filter="${f.key}">
+        ${escapeHtml(f.label)} <span class="count">${counts[f.key]}</span>
+      </button>`;
+    }).join("");
+    carteraFiltersEl.querySelectorAll(".mobile-tab").forEach(btn => {
+      btn.addEventListener("click", () => {
+        state.carteraFilter = btn.dataset.filter;
+        render();
+      });
+    });
+  }
+
+  function clienteCardHtml(c){
+    const wa = toWhatsappLink(c.telefono);
+    const sub = [c.contacto, c.rubro].filter(Boolean).join(" · ");
+    return `
+    <article class="cliente-card" data-id="${c.id}">
+      <div class="cliente-main">
+        <div class="cliente-company">${escapeHtml(c.empresa)}</div>
+        ${sub ? `<div class="cliente-sub">${escapeHtml(sub)}</div>` : ""}
+      </div>
+      ${c.rubro ? `<span class="cliente-rubro-tag">${escapeHtml(c.rubro)}</span>` : ""}
+      <span class="estado-pill estado-${c.estado}">${c.estado === "activo" ? "Activo" : "Inactivo"}</span>
+      <a class="wa-btn ${wa ? "" : "disabled"}" href="${wa || "#"}" target="_blank" rel="noopener noreferrer" title="Abrir WhatsApp" onclick="event.stopPropagation()">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 6.4A8.9 8.9 0 0012 4a9 9 0 00-7.8 13.4L3 21l3.7-1.2A9 9 0 1017.6 6.4zM12 19.5a7.4 7.4 0 01-3.8-1l-.27-.16-2.8.9.9-2.73-.18-.28A7.5 7.5 0 1119.5 12 7.4 7.4 0 0112 19.5zm4.1-5.6c-.22-.11-1.3-.64-1.5-.72s-.35-.11-.5.11-.58.72-.7.86-.25.16-.47.05a6.1 6.1 0 01-1.8-1.1 6.7 6.7 0 01-1.24-1.55c-.13-.22 0-.34.1-.45s.22-.25.33-.38a1.5 1.5 0 00.22-.37.4.4 0 000-.39c-.06-.11-.5-1.2-.68-1.65s-.37-.37-.5-.38h-.43a.83.83 0 00-.6.28 2.5 2.5 0 00-.79 1.87 4.4 4.4 0 00.92 2.3 10 10 0 003.9 3.44c.55.24.98.38 1.31.48a3.1 3.1 0 001.44.09 2.36 2.36 0 001.55-1.1 1.9 1.9 0 00.13-1.1c-.06-.1-.2-.16-.42-.27z"/></svg>
+      </a>
+    </article>`;
+  }
+
+  function renderCarteraBoard(){
+    const clientes = clientesFiltered();
+    const emptyMsg = `Sin clientes acá${state.search ? " para esta búsqueda" : ""}.`;
+    boardEl.innerHTML = `
+      <div class="cartera-list-wrap">
+        <div class="cartera-list">
+          ${clientes.length ? clientes.map(clienteCardHtml).join("") : `<div class="cliente-empty">${emptyMsg}</div>`}
+        </div>
+      </div>`;
+    boardEl.querySelectorAll(".cliente-card").forEach(card => {
+      card.addEventListener("click", () => openClienteModal(card.dataset.id));
+    });
   }
 
   function renderMobileTabs(){
@@ -1083,23 +1269,29 @@
   /* ============ Page toggle & role badge ============ */
   const pageToggle = document.getElementById("pageToggle");
   const recontactoCountEl = document.getElementById("recontactoCount");
+  const carteraCountEl = document.getElementById("carteraCount");
   const newLeadBtn = document.getElementById("newLeadBtn");
+  const newClienteBtn = document.getElementById("newClienteBtn");
   const archiveBtn = document.getElementById("archiveBtn");
   const papeleraBtn = document.getElementById("papeleraBtn");
 
   function applyModeUI(){
-    newLeadBtn.style.display = (state.mode === "joaquin" && state.page === "pipeline") ? "flex" : "none";
-    archiveBtn.style.display = state.mode === "joaquin" ? "flex" : "none";
-    papeleraBtn.style.display = state.mode === "joaquin" ? "flex" : "none";
+    const isCartera = state.page === "cartera";
+    newLeadBtn.style.display = (!isCartera && state.mode === "joaquin" && state.page === "pipeline") ? "flex" : "none";
+    archiveBtn.style.display = (!isCartera && state.mode === "joaquin") ? "flex" : "none";
+    papeleraBtn.style.display = (!isCartera && state.mode === "joaquin") ? "flex" : "none";
+    newClienteBtn.style.display = isCartera ? "flex" : "none";
   }
 
   pageToggle.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-page]");
     if(!btn) return;
     state.page = btn.dataset.page;
-    state.activeMobileColumn = currentColumns()[0].key;
+    if(state.page !== "cartera") state.activeMobileColumn = currentColumns()[0].key;
     render();
   });
+
+  newClienteBtn.addEventListener("click", () => openClienteModal(null));
 
   /* ============ Lead modal (create / edit) ============ */
   const leadOverlay = document.getElementById("leadOverlay");
@@ -1508,10 +1700,137 @@
   document.getElementById("papeleraCloseBtn").addEventListener("click", () => papeleraOverlay.classList.remove("open"));
   papeleraOverlay.addEventListener("click", (e) => { if(e.target === papeleraOverlay) papeleraOverlay.classList.remove("open"); });
 
+  /* ============ Cliente modal (Cartera) ============ */
+  const clienteOverlay = document.getElementById("clienteOverlay");
+  const clienteModalTitle = document.getElementById("clienteModalTitle");
+  const clienteModalFoot = document.getElementById("clienteModalFoot");
+  const clienteDeleteConfirm = document.getElementById("clienteDeleteConfirm");
+  const clienteEstadoSeg = document.getElementById("clienteEstadoSeg");
+  const cfEmpresa = document.getElementById("cf_empresa");
+
+  const cFields = {
+    empresa: document.getElementById("cin_empresa"),
+    contacto: document.getElementById("cin_contacto"),
+    telefono: document.getElementById("cin_telefono"),
+    rubro: document.getElementById("cin_rubro"),
+    notas: document.getElementById("cin_notas"),
+  };
+
+  let clienteEstadoValue = "activo";
+
+  function renderClienteEstadoSeg(){
+    const opts = [
+      { value:"activo",   label:"Activo" },
+      { value:"inactivo", label:"Inactivo" },
+    ];
+    clienteEstadoSeg.innerHTML = opts.map(o => {
+      const active = clienteEstadoValue === o.value ? "active-" + (o.value === "activo" ? "cerrado" : "no_cerrado") : "";
+      return `<button type="button" class="cierre-btn ${active}" data-value="${o.value}">${o.label}</button>`;
+    }).join("");
+    clienteEstadoSeg.querySelectorAll(".cierre-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        clienteEstadoValue = btn.dataset.value;
+        renderClienteEstadoSeg();
+      });
+    });
+  }
+
+  function openClienteModal(id){
+    state.editingClienteId = id || null;
+    clienteDeleteConfirm.classList.remove("show");
+    const isNew = !id;
+    const c = id ? state.clientes.find(x => x.id === id) : null;
+
+    clienteModalTitle.textContent = isNew ? "Nuevo cliente" : "Editar cliente";
+    cFields.empresa.value = c ? c.empresa : "";
+    cFields.contacto.value = c ? c.contacto : "";
+    cFields.telefono.value = c ? c.telefono : "";
+    cFields.rubro.value = c ? (c.rubro || "") : "";
+    cFields.notas.value = c ? c.notas : "";
+    cfEmpresa.classList.remove("invalid");
+    clienteEstadoValue = c ? c.estado : "activo";
+    renderClienteEstadoSeg();
+
+    clienteModalFoot.innerHTML = `
+      ${!isNew ? `<button class="btn btn-danger" id="clienteDeleteBtn">Eliminar</button>` : ""}
+      <span style="flex:1 1 auto"></span>
+      <button class="btn btn-ghost" id="clienteCancelBtn">Cancelar</button>
+      <button class="btn btn-accent" id="clienteSaveBtn">${isNew ? "Crear cliente" : "Guardar"}</button>
+    `;
+    document.getElementById("clienteCancelBtn").addEventListener("click", closeClienteModal);
+    document.getElementById("clienteSaveBtn").addEventListener("click", () => saveClienteFromForm(isNew));
+    const delBtn = document.getElementById("clienteDeleteBtn");
+    if(delBtn) delBtn.addEventListener("click", () => clienteDeleteConfirm.classList.add("show"));
+
+    clienteOverlay.classList.add("open");
+    setTimeout(() => cFields.empresa.focus(), 60);
+  }
+
+  function closeClienteModal(){
+    clienteOverlay.classList.remove("open");
+    state.editingClienteId = null;
+  }
+
+  async function saveClienteFromForm(isNew){
+    if(!cFields.empresa.value.trim()){
+      cfEmpresa.classList.add("invalid");
+      cFields.empresa.focus();
+      return;
+    }
+    cfEmpresa.classList.remove("invalid");
+
+    const payload = {
+      empresa: cFields.empresa.value.trim(),
+      contacto: cFields.contacto.value.trim(),
+      telefono: cFields.telefono.value.trim(),
+      rubro: cFields.rubro.value.trim() || null,
+      estado: clienteEstadoValue,
+      notas: cFields.notas.value.trim(),
+    };
+
+    if(isNew){
+      payload.created_by = state.session.user.id;
+      const { data, error } = await supa.from("clientes").insert(payload).select().single();
+      if(error){ console.error(error); toast("No se pudo crear el cliente"); return; }
+      state.clientes.push(data);
+      toast("Cliente creado");
+    } else {
+      const c = state.clientes.find(x => x.id === state.editingClienteId);
+      if(!c) return;
+      Object.assign(c, payload);
+      const { error } = await supa.from("clientes").update(payload).eq("id", c.id);
+      if(error){ console.error(error); toast("No se pudo guardar el cambio"); return; }
+      toast("Cambios guardados");
+    }
+    closeClienteModal();
+    render();
+  }
+
+  document.getElementById("clienteCancelDeleteBtn").addEventListener("click", () => clienteDeleteConfirm.classList.remove("show"));
+  document.getElementById("clienteConfirmDeleteBtn").addEventListener("click", async () => {
+    const idx = state.clientes.findIndex(c => c.id === state.editingClienteId);
+    if(idx > -1){
+      const id = state.clientes[idx].id;
+      state.clientes.splice(idx, 1);
+      toast("Cliente eliminado");
+      closeClienteModal();
+      render();
+      const { error } = await supa.from("clientes").delete().eq("id", id);
+      if(error){ console.error(error); toast("No se pudo eliminar el cliente"); }
+      return;
+    }
+    closeClienteModal();
+    render();
+  });
+
+  document.getElementById("clienteModalCloseBtn").addEventListener("click", closeClienteModal);
+  clienteOverlay.addEventListener("click", (e) => { if(e.target === clienteOverlay) closeClienteModal(); });
+
   /* ============ Keyboard ============ */
   document.addEventListener("keydown", (e) => {
     if(e.key === "Escape"){
       if(leadOverlay.classList.contains("open")) closeLeadModal();
+      if(clienteOverlay.classList.contains("open")) closeClienteModal();
       if(archiveOverlay.classList.contains("open")) archiveOverlay.classList.remove("open");
       if(papeleraOverlay.classList.contains("open")) papeleraOverlay.classList.remove("open");
     }
@@ -1541,7 +1860,20 @@
     realtimeChannel = supa.channel("leads-changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, handleLeadRealtime)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "lead_history" }, handleHistoryRealtime)
+      .on("postgres_changes", { event: "*", schema: "public", table: "clientes" }, handleClienteRealtime)
       .subscribe();
+  }
+
+  function handleClienteRealtime(payload){
+    if(payload.eventType === "DELETE"){
+      state.clientes = state.clientes.filter(c => c.id !== payload.old.id);
+      if(state.page === "cartera") render();
+      return;
+    }
+    const row = payload.new;
+    const idx = state.clientes.findIndex(c => c.id === row.id);
+    if(idx > -1) state.clientes[idx] = row; else state.clientes.push(row);
+    if(state.page === "cartera") render();
   }
 
   function unsubscribeRealtime(){
@@ -1585,6 +1917,15 @@
       .order("created_at", { ascending: true });
     if(error){ console.error(error); toast("No se pudieron cargar los leads"); return; }
     state.leads = data || [];
+  }
+
+  async function loadClientes(){
+    const { data, error } = await supa
+      .from("clientes")
+      .select("*")
+      .order("empresa", { ascending: true });
+    if(error){ console.error(error); toast("No se pudieron cargar los clientes"); return; }
+    state.clientes = data || [];
   }
 
   async function fetchHistory(leadId){
@@ -1631,7 +1972,7 @@
     userBadgeLabel.textContent = data.rol === "joaquin" ? "Joaquín" : "Tristán";
     userBadge.title = data.email;
 
-    await loadLeads();
+    await Promise.all([loadLeads(), loadClientes()]);
     subscribeRealtime();
     state.activeMobileColumn = currentColumns()[0].key;
     render();
