@@ -422,7 +422,7 @@
   .field{ margin-bottom: 14px; }
   .field label{ display:block; font-size:12.5px; font-weight:600; color: var(--text-dim); margin-bottom:6px; }
   .field .req{ color: var(--accent); }
-  .field input[type=text], .field input[type=tel], .field input[type=number], .field input[type=date], .field select, .field textarea{
+  .field input[type=text], .field input[type=tel], .field input[type=number], .field input[type=date], .field input[type=datetime-local], .field select, .field textarea{
     width:100%; background: var(--surface); border:1px solid var(--border); color:var(--text);
     border-radius: 10px; padding: 10px 12px; font-size:14px; outline:none;
     transition: border-color .15s ease, background .15s ease;
@@ -495,6 +495,11 @@
   .history-row .h-label{ color:var(--text); flex:1 1 auto; }
   .history-row .h-date{ color:var(--text-faint); font-size:11px; white-space:nowrap; flex:0 0 auto; }
   .history-empty{ color:var(--text-faint); font-size:12px; }
+  .novedad-item{ display:flex; flex-direction:column; gap:3px; padding:8px 0; border-bottom:1px solid var(--border-soft); }
+  .novedad-item:last-child{ border-bottom:none; }
+  .novedad-date{ font-size:11px; color:var(--text-faint); font-weight:600; }
+  .novedad-text{ font-size:12.5px; color:var(--text); line-height:1.4; }
+  .novedad-text b{ color:var(--text-dim); font-weight:600; }
 
   .readonly-note{
     font-size:12px; color:var(--text-faint); background:var(--surface); border:1px solid var(--border);
@@ -566,6 +571,7 @@
       <button data-page="pipeline" class="active">Pipeline</button>
       <button data-page="recontacto">Recontacto<span class="pill-count" id="recontactoCount" style="display:none;">0</span></button>
       <button data-page="cartera">Cartera<span class="pill-count" id="carteraCount" style="display:none;">0</span></button>
+      <button data-page="contactados" id="contactadosToggleBtn" style="display:none;">Contactados<span class="pill-count" id="contactadosCount" style="display:none;">0</span></button>
     </div>
 
     <div class="user-badge" id="userBadge" title="">
@@ -687,6 +693,26 @@
       <div class="field" id="f_history" style="display:none;">
         <label>Historial</label>
         <div class="history-list" id="historyList"></div>
+      </div>
+
+      <div class="field" id="f_novedades" style="display:none;">
+        <label>Novedades de contacto</label>
+        <div class="history-list" id="novedadesList"></div>
+        <div id="novedadAddForm" style="display:none; margin-top:10px;">
+          <div class="field" style="margin-bottom:8px;">
+            <label>Fecha y hora del contacto</label>
+            <input type="datetime-local" id="in_novedad_fecha">
+          </div>
+          <div class="field" style="margin-bottom:8px;">
+            <label>Mensaje enviado</label>
+            <textarea id="in_novedad_mensaje" placeholder="Qué se le dijo o envió..."></textarea>
+          </div>
+          <div class="field" style="margin-bottom:8px;">
+            <label>Respuesta</label>
+            <textarea id="in_novedad_respuesta" placeholder="Qué respondió (si respondió)..."></textarea>
+          </div>
+          <button type="button" class="btn btn-ghost btn-full" id="addNovedadBtn">Agregar novedad</button>
+        </div>
       </div>
 
       <div class="delete-confirm" id="deleteConfirm">
@@ -870,6 +896,7 @@
     session: null,
     userRow: null,          // { email, rol }
     historyCache: {},       // leadId -> lead_history[]
+    novedadesCache: {},     // leadId -> lead_novedades[]
   };
 
   function currentColumns(){
@@ -965,6 +992,19 @@
     return state.leads.filter(l => !l.archived && l.recontacto_active).length;
   }
 
+  // Leads en etapa "Contactado": a cargo de Joaquín en el pipeline normal.
+  // Tristán no los ve como columna del board (no está en TRISTAN_VISIBLE),
+  // pero puede consultarlos en solo lectura vía el toggle "Contactados".
+  function leadsContactadosFlat(){
+    return state.leads.filter(l =>
+      !l.archived && !l.recontacto_active && l.etapa === "contactado" && matchesSearch(l, state.search)
+    );
+  }
+
+  function contactadosCount(){
+    return state.leads.filter(l => !l.archived && !l.recontacto_active && l.etapa === "contactado").length;
+  }
+
   function matchesSearchCliente(c, q){
     if(!q) return true;
     q = q.toLowerCase();
@@ -1001,6 +1041,10 @@
       carteraFiltersEl.style.display = "flex";
       renderCarteraFilters();
       renderCarteraBoard();
+    } else if(state.page === "contactados"){
+      mobileTabsEl.style.display = "none";
+      carteraFiltersEl.style.display = "none";
+      renderContactadosBoard();
     } else {
       carteraFiltersEl.style.display = "none";
       mobileTabsEl.style.display = "";
@@ -1017,6 +1061,9 @@
     const total = state.clientes.length;
     carteraCountEl.style.display = total > 0 ? "inline-flex" : "none";
     carteraCountEl.textContent = total;
+    const nc = contactadosCount();
+    contactadosCountEl.style.display = nc > 0 ? "inline-flex" : "none";
+    contactadosCountEl.textContent = nc;
   }
 
   function renderCarteraFilters(){
@@ -1063,6 +1110,23 @@
       </div>`;
     boardEl.querySelectorAll(".cliente-card").forEach(card => {
       card.addEventListener("click", () => openClienteModal(card.dataset.id));
+    });
+  }
+
+  // Vista de solo lectura para Tristán: lista plana (no kanban, no drag) de
+  // los leads que Joaquín todavía tiene en la etapa "Contactado". Sirve para
+  // dar visibilidad sin permitir mover ni editar nada desde acá.
+  function renderContactadosBoard(){
+    const leads = leadsContactadosFlat();
+    const emptyMsg = `Sin leads contactados${state.search ? " para esta búsqueda" : ""}.`;
+    boardEl.innerHTML = `
+      <div class="cartera-list-wrap">
+        <div class="cartera-list">
+          ${leads.length ? leads.map(l => cardHtml(l, false)).join("") : `<div class="cliente-empty">${emptyMsg}</div>`}
+        </div>
+      </div>`;
+    boardEl.querySelectorAll(".lead-card").forEach(card => {
+      card.addEventListener("click", () => openLeadModal(card.dataset.id));
     });
   }
 
@@ -1270,6 +1334,8 @@
   const pageToggle = document.getElementById("pageToggle");
   const recontactoCountEl = document.getElementById("recontactoCount");
   const carteraCountEl = document.getElementById("carteraCount");
+  const contactadosCountEl = document.getElementById("contactadosCount");
+  const contactadosToggleBtn = document.getElementById("contactadosToggleBtn");
   const newLeadBtn = document.getElementById("newLeadBtn");
   const newClienteBtn = document.getElementById("newClienteBtn");
   const archiveBtn = document.getElementById("archiveBtn");
@@ -1281,13 +1347,15 @@
     archiveBtn.style.display = (!isCartera && state.mode === "joaquin") ? "flex" : "none";
     papeleraBtn.style.display = (!isCartera && state.mode === "joaquin") ? "flex" : "none";
     newClienteBtn.style.display = isCartera ? "flex" : "none";
+    contactadosToggleBtn.style.display = state.mode === "tristan" ? "" : "none";
   }
 
   pageToggle.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-page]");
     if(!btn) return;
+    if(btn.dataset.page === "contactados" && state.mode !== "tristan") return;
     state.page = btn.dataset.page;
-    if(state.page !== "cartera") state.activeMobileColumn = currentColumns()[0].key;
+    if(state.page === "pipeline" || state.page === "recontacto") state.activeMobileColumn = currentColumns()[0].key;
     render();
   });
 
@@ -1329,10 +1397,16 @@
     const isClientMode = state.mode === "tristan";
     const isNew = !id;
     const lead = id ? state.leads.find(l => l.id === id) : null;
+    // Tristán no tiene ningún permiso de edición sobre leads que Joaquín
+    // todavía no movió más allá de "Contactado" — esa etapa es enteramente
+    // suya. Tristán solo puede consultarlos (vía el toggle "Contactados").
+    const isContactadoLocked = isClientMode && !isNew && !!lead && lead.etapa === "contactado";
 
     modalTitle.textContent = isNew ? "Nuevo lead" : (isClientMode ? "Detalle del lead" : "Editar lead");
     clientNote.style.display = (isClientMode && !isNew) ? "flex" : "none";
-    document.getElementById("clientNoteText").innerHTML = "Modo Tristán: solo podés editar <b>Resultado</b>, <b>Notas</b>, <b>Fecha de contacto</b>" + (lead && (lead.etapa === "cerrado" || lead.etapa === "seguimiento") ? " y <b>Recontacto</b>" : "") + " de este lead.";
+    document.getElementById("clientNoteText").innerHTML = isContactadoLocked
+      ? "Este lead todavía está en la etapa <b>Contactado</b>, a cargo de Joaquín. Solo podés consultarlo, no editarlo."
+      : "Modo Tristán: solo podés editar <b>Resultado</b>, <b>Notas</b>, <b>Fecha de contacto</b>" + (lead && (lead.etapa === "cerrado" || lead.etapa === "seguimiento") ? " y <b>Recontacto</b>" : "") + " de este lead.";
 
     fields.empresa.value = lead ? lead.empresa : "";
     fields.contacto.value = lead ? lead.contacto : "";
@@ -1347,7 +1421,7 @@
 
     const clientEditable = ["resultado", "notas", "fecha"];
     Object.keys(fields).forEach(key => {
-      const lockedForClient = isClientMode && !isNew && !clientEditable.includes(key);
+      const lockedForClient = isClientMode && !isNew && (isContactadoLocked || !clientEditable.includes(key));
       fields[key].disabled = lockedForClient || (isClientMode && isNew);
     });
 
@@ -1355,10 +1429,13 @@
     renderHistory(lead);
     if(lead) fetchHistory(lead.id).then(() => renderHistory(lead));
 
+    renderNovedades(lead);
+    if(lead) fetchNovedades(lead.id).then(() => renderNovedades(lead));
+
     // Foot buttons
     let footHtml = "";
     if(isClientMode){
-      if(!isNew){
+      if(!isNew && !isContactadoLocked){
         footHtml = `<button class="btn btn-ghost" id="cancelBtn">Cerrar</button>
                     <button class="btn btn-accent btn-full" id="saveBtn">Guardar cambios</button>`;
       } else {
@@ -1520,6 +1597,88 @@
         <span class="h-date">${formatDateTime(h.ts)}</span>
       </div>
     `).join("");
+  }
+
+  const novedadesField = document.getElementById("f_novedades");
+  const novedadesList = document.getElementById("novedadesList");
+  const novedadAddForm = document.getElementById("novedadAddForm");
+  const inNovedadFecha = document.getElementById("in_novedad_fecha");
+  const inNovedadMensaje = document.getElementById("in_novedad_mensaje");
+  const inNovedadRespuesta = document.getElementById("in_novedad_respuesta");
+
+  // "Novedades de contacto": bitácora append-only de lead_novedades. Solo
+  // Joaquín puede agregar entradas nuevas (decisión de producto) — Tristán
+  // puede ver el historial para tener contexto, pero el form de alta se
+  // oculta para su rol. Nadie puede editar ni borrar una entrada ya creada.
+  function renderNovedades(lead){
+    if(!lead || lead.etapa !== "contactado"){
+      novedadesField.style.display = "none";
+      return;
+    }
+    novedadesField.style.display = "block";
+    const rows = state.novedadesCache[lead.id] || [];
+    novedadesList.innerHTML = rows.length
+      ? rows.map(n => `
+        <div class="novedad-item">
+          <span class="novedad-date">${formatDateTime(n.contactado_at)}</span>
+          ${n.mensaje ? `<span class="novedad-text"><b>Mensaje:</b> ${escapeHtml(n.mensaje)}</span>` : ""}
+          ${n.respuesta ? `<span class="novedad-text"><b>Respuesta:</b> ${escapeHtml(n.respuesta)}</span>` : ""}
+        </div>
+      `).join("")
+      : `<div class="history-empty">Sin novedades registradas.</div>`;
+
+    if(state.mode === "joaquin"){
+      novedadAddForm.style.display = "block";
+      inNovedadFecha.value = nowDatetimeLocal();
+      inNovedadMensaje.value = "";
+      inNovedadRespuesta.value = "";
+    } else {
+      novedadAddForm.style.display = "none";
+    }
+  }
+
+  function nowDatetimeLocal(){
+    const d = new Date();
+    const pad = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  document.getElementById("addNovedadBtn").addEventListener("click", async () => {
+    const lead = state.leads.find(l => l.id === state.editingId);
+    if(!lead) return;
+    const mensaje = inNovedadMensaje.value.trim();
+    const respuesta = inNovedadRespuesta.value.trim();
+    if(!mensaje && !respuesta){
+      toast("Escribí al menos el mensaje o la respuesta");
+      return;
+    }
+    const payload = {
+      lead_id: lead.id,
+      contactado_at: inNovedadFecha.value ? new Date(inNovedadFecha.value).toISOString() : new Date().toISOString(),
+      mensaje,
+      respuesta,
+      created_by: state.session.user.id,
+    };
+    const { data, error } = await supa.from("lead_novedades").insert(payload).select().single();
+    if(error){ console.error(error); toast("No se pudo guardar la novedad"); return; }
+    if(!state.novedadesCache[lead.id]) state.novedadesCache[lead.id] = [];
+    if(!state.novedadesCache[lead.id].find(n => n.id === data.id)){
+      state.novedadesCache[lead.id].unshift(data);
+      state.novedadesCache[lead.id].sort((a, b) => new Date(b.contactado_at) - new Date(a.contactado_at));
+    }
+    renderNovedades(lead);
+    toast("Novedad agregada");
+  });
+
+  async function fetchNovedades(leadId){
+    const { data, error } = await supa
+      .from("lead_novedades")
+      .select("*")
+      .eq("lead_id", leadId)
+      .order("contactado_at", { ascending: false });
+    if(error){ console.error(error); return []; }
+    state.novedadesCache[leadId] = data || [];
+    return data;
   }
 
   function closeLeadModal(){
@@ -1860,6 +2019,7 @@
     realtimeChannel = supa.channel("leads-changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, handleLeadRealtime)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "lead_history" }, handleHistoryRealtime)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "lead_novedades" }, handleNovedadRealtime)
       .on("postgres_changes", { event: "*", schema: "public", table: "clientes" }, handleClienteRealtime)
       .subscribe();
   }
@@ -1906,6 +2066,19 @@
     if(state.editingId === row.lead_id){
       const lead = state.leads.find(l => l.id === row.lead_id);
       renderHistory(lead);
+    }
+  }
+
+  function handleNovedadRealtime(payload){
+    const row = payload.new;
+    if(!state.novedadesCache[row.lead_id]) state.novedadesCache[row.lead_id] = [];
+    if(!state.novedadesCache[row.lead_id].find(n => n.id === row.id)){
+      state.novedadesCache[row.lead_id].unshift(row);
+      state.novedadesCache[row.lead_id].sort((a, b) => new Date(b.contactado_at) - new Date(a.contactado_at));
+    }
+    if(state.editingId === row.lead_id){
+      const lead = state.leads.find(l => l.id === row.lead_id);
+      renderNovedades(lead);
     }
   }
 
