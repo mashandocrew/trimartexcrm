@@ -157,6 +157,21 @@
   .icon-btn-faint{ opacity:.55; border-color:transparent; background:transparent; }
   .icon-btn-faint:hover{ opacity:1; background: var(--surface); }
 
+  .privada-toggle{
+    display:flex; align-items:center; gap:6px;
+    background: var(--surface); border:1px solid var(--border);
+    color: var(--text-dim); border-radius:10px;
+    padding: 9px 13px; font-size: 13px; font-weight: 600;
+    cursor:pointer; white-space:nowrap; flex:0 0 auto;
+    transition: background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .privada-toggle svg{ width:15px; height:15px; }
+  .privada-toggle:hover{ background: var(--surface-2); color:var(--text); }
+  .privada-toggle.active-private{
+    background: #bf5af2; border-color:#bf5af2; color:#fff;
+    box-shadow: 0 2px 10px rgba(191,90,242,0.35);
+  }
+
   .user-badge{
     display:flex; align-items:center; gap:7px;
     background: var(--surface); border:1px solid var(--border);
@@ -542,6 +557,8 @@
     .brand-text{ display:none; }
     .btn-primary span{ display:none; }
     .btn-primary{ padding:9px 12px; }
+    .privada-toggle span{ display:none; }
+    .privada-toggle{ padding:9px 12px; }
   }
 </style>
 </head>
@@ -573,6 +590,16 @@
       <button data-page="cartera">Cartera<span class="pill-count" id="carteraCount" style="display:none;">0</span></button>
       <button data-page="contactados" id="contactadosToggleBtn" style="display:none;">Contactados<span class="pill-count" id="contactadosCount" style="display:none;">0</span></button>
     </div>
+
+    <button class="privada-toggle" id="privadaToggleBtn" style="display:none;" title="Alternar Gestión Privada">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.7"/><path d="M5 12a7 7 0 0114 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      <span id="privadaToggleLabel">Gestión Privada</span>
+    </button>
+
+    <button class="btn-primary" id="importSheetsBtn" style="display:none;">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+      <span>Importar</span>
+    </button>
 
     <div class="user-badge" id="userBadge" title="">
       <span class="user-badge-dot"></span>
@@ -802,6 +829,25 @@
   </div>
 </div>
 
+<!-- Import modal (Gestión Privada de Tristán) -->
+<div class="overlay" id="importOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Importar a Gestión Privada</h2>
+      <button class="modal-close" id="importCloseBtn"><svg viewBox="0 0 24 24" fill="none"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <p class="papelera-hint">Pegá filas copiadas de Google Sheets (o un CSV) con este orden de columnas: Empresa, Contacto, Teléfono, Rubro, Ticket, Fuente, Notas. Solo Empresa es obligatoria.</p>
+      <textarea id="importText" rows="10" placeholder="Empresa&#9;Contacto&#9;Teléfono&#9;Rubro&#9;Ticket&#9;Fuente&#9;Notas" style="width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:12.5px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px;"></textarea>
+      <div class="archive-list" id="importPreview" style="margin-top:12px;"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="importCancelBtn">Cancelar</button>
+      <button class="btn btn-accent" id="importConfirmBtn">Importar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Login overlay -->
 <div class="auth-screen" id="loginScreen">
   <div class="auth-card">
@@ -838,6 +884,7 @@
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const COLUMNS = [
+    { key:"leads_tristan",       label:"Leads Tristán",       color:"#bf5af2" },
     { key:"nuevo",               label:"Nuevo",               color:"#8e8e93" },
     { key:"contactado",          label:"Contactado",          color:"#0a84ff" },
     { key:"cotizacion_pendiente",label:"Cotización pendiente",color:"#ff9f0a" },
@@ -845,8 +892,10 @@
     { key:"seguimiento",         label:"Seguimiento",         color:"#5ac8fa" },
     { key:"cerrado",             label:"Cerrado",             color:"#30d158" },
   ];
-  // Primera etapa que ve Tristán = "Cotización pendiente": ahí Joaquín deja los leads listos para cotizar.
-  const TRISTAN_VISIBLE = ["cotizacion_pendiente","cotizacion_enviada","seguimiento","cerrado"];
+  // "leads_tristan": leads que Tristán compartió desde su Gestión Privada — visibles
+  // para ambos roles. Después de eso, la primera etapa propia del embudo de Joaquín
+  // que ve Tristán es "Cotización pendiente".
+  const TRISTAN_VISIBLE = ["leads_tristan","cotizacion_pendiente","cotizacion_enviada","seguimiento","cerrado"];
 
   const RECONTACTO_STAGES = Array.from({length:8}, (_,i) => ({
     key: "r" + (i+1), label: "Recontacto " + (i+1), color: "#0a84ff"
@@ -885,9 +934,11 @@
   /* ============ App state ============ */
   const state = {
     leads: [],
+    privados: [],           // Gestión Privada de Tristán (tabla leads_privados_tristan)
+    privateMode: false,     // toggle "Gestión Privada" — solo tiene efecto para rol tristan
     clientes: [],
     mode: "joaquin",        // asignado automáticamente por email al loguearse
-    page: "pipeline",       // "pipeline" | "recontacto" | "cartera"
+    page: "pipeline",       // "pipeline" | "recontacto" | "cartera" | "contactados"
     search: "",
     carteraFilter: "todos", // "todos" | "activo" | "inactivo"
     activeMobileColumn: null,
@@ -899,8 +950,19 @@
     novedadesCache: {},     // leadId -> lead_novedades[]
   };
 
+  // Fuente de datos activa del pipeline/recontacto: la Gestión Privada de
+  // Tristán vive en una tabla separada con el mismo shape que leads, para no
+  // mezclar filas privadas y compartidas bajo la misma policy de RLS.
+  function activeLeads(){
+    return state.privateMode ? state.privados : state.leads;
+  }
+  function activeTable(){
+    return state.privateMode ? "leads_privados_tristan" : "leads";
+  }
+
   function currentColumns(){
     if(state.page === "recontacto") return RECONTACTO_STAGES;
+    if(state.privateMode) return COLUMNS.filter(c => c.key !== "leads_tristan");
     return state.mode === "tristan"
       ? COLUMNS.filter(c => TRISTAN_VISIBLE.includes(c.key))
       : COLUMNS;
@@ -969,14 +1031,14 @@
   // Leads visibles en el pipeline principal: no archivados y sin recontacto activo
   // (una vez enviado a Recontacto, el lead se gestiona sólo desde esa página).
   function leadsForPipelineColumn(colKey){
-    return state.leads.filter(l =>
+    return activeLeads().filter(l =>
       !l.archived && !l.recontacto_active &&
       l.etapa === colKey && matchesSearch(l, state.search)
     );
   }
 
   function leadsForRecontactoStage(stageNum){
-    return state.leads.filter(l =>
+    return activeLeads().filter(l =>
       !l.archived && l.recontacto_active &&
       l.recontacto_stage === stageNum && matchesSearch(l, state.search)
     );
@@ -989,7 +1051,7 @@
   }
 
   function activeRecontactoCount(){
-    return state.leads.filter(l => !l.archived && l.recontacto_active).length;
+    return activeLeads().filter(l => !l.archived && l.recontacto_active).length;
   }
 
   // Leads en etapa "Contactado": a cargo de Joaquín en el pipeline normal.
@@ -1232,7 +1294,7 @@
     const target = el.closest(".column-body, .mobile-tab");
     if(!target) return null;
     const col = target.dataset.column;
-    if(state.page === "pipeline" && state.mode === "tristan" && !TRISTAN_VISIBLE.includes(col)) return null;
+    if(state.page === "pipeline" && state.mode === "tristan" && !state.privateMode && !TRISTAN_VISIBLE.includes(col)) return null;
     return target;
   }
 
@@ -1295,7 +1357,7 @@
   }
 
   async function moveCard(id, targetKey){
-    const lead = state.leads.find(l => l.id === id);
+    const lead = activeLeads().find(l => l.id === id);
     if(!lead) return;
 
     let patch;
@@ -1314,7 +1376,7 @@
     const justMoved = boardEl.querySelector(`.lead-card[data-id="${id}"]`);
     if(justMoved) justMoved.classList.add("drop-in");
 
-    const { error } = await supa.from("leads").update(patch).eq("id", id);
+    const { error } = await supa.from(activeTable()).update(patch).eq("id", id);
     if(error){ console.error(error); toast("No se pudo guardar el cambio"); }
   }
 
@@ -1336,6 +1398,9 @@
   const carteraCountEl = document.getElementById("carteraCount");
   const contactadosCountEl = document.getElementById("contactadosCount");
   const contactadosToggleBtn = document.getElementById("contactadosToggleBtn");
+  const privadaToggleBtn = document.getElementById("privadaToggleBtn");
+  const privadaToggleLabel = document.getElementById("privadaToggleLabel");
+  const importSheetsBtn = document.getElementById("importSheetsBtn");
   const newLeadBtn = document.getElementById("newLeadBtn");
   const newClienteBtn = document.getElementById("newClienteBtn");
   const archiveBtn = document.getElementById("archiveBtn");
@@ -1343,17 +1408,31 @@
 
   function applyModeUI(){
     const isCartera = state.page === "cartera";
-    newLeadBtn.style.display = (!isCartera && state.mode === "joaquin" && state.page === "pipeline") ? "flex" : "none";
-    archiveBtn.style.display = (!isCartera && state.mode === "joaquin") ? "flex" : "none";
-    papeleraBtn.style.display = (!isCartera && state.mode === "joaquin") ? "flex" : "none";
+    const isPrivate = state.privateMode;
+    newLeadBtn.style.display = (!isCartera && (state.mode === "joaquin" || isPrivate) && state.page === "pipeline") ? "flex" : "none";
+    archiveBtn.style.display = (!isCartera && (state.mode === "joaquin" || isPrivate)) ? "flex" : "none";
+    papeleraBtn.style.display = (!isCartera && (state.mode === "joaquin" || isPrivate)) ? "flex" : "none";
     newClienteBtn.style.display = isCartera ? "flex" : "none";
-    contactadosToggleBtn.style.display = state.mode === "tristan" ? "" : "none";
+    contactadosToggleBtn.style.display = (state.mode === "tristan" && !isPrivate) ? "" : "none";
+    privadaToggleBtn.style.display = state.mode === "tristan" ? "flex" : "none";
+    privadaToggleBtn.classList.toggle("active-private", isPrivate);
+    privadaToggleLabel.textContent = isPrivate ? "Volver al pipeline" : "Gestión Privada";
+    importSheetsBtn.style.display = isPrivate ? "flex" : "none";
   }
+
+  privadaToggleBtn.addEventListener("click", () => {
+    state.privateMode = !state.privateMode;
+    state.page = "pipeline";
+    state.search = ""; searchInput.value = ""; searchClear.style.display = "none";
+    state.activeMobileColumn = currentColumns()[0].key;
+    render();
+  });
 
   pageToggle.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-page]");
     if(!btn) return;
     if(btn.dataset.page === "contactados" && state.mode !== "tristan") return;
+    if(btn.dataset.page === "cartera" || btn.dataset.page === "contactados") state.privateMode = false;
     state.page = btn.dataset.page;
     if(state.page === "pipeline" || state.page === "recontacto") state.activeMobileColumn = currentColumns()[0].key;
     render();
@@ -1394,9 +1473,12 @@
   async function openLeadModal(id){
     state.editingId = id || null;
     deleteConfirm.classList.remove("show");
-    const isClientMode = state.mode === "tristan";
+    // En su Gestión Privada, Tristán tiene edición completa (es dueño de esos
+    // leads) — el modo restringido de "cliente" solo aplica al pipeline
+    // compartido de Joaquín.
+    const isClientMode = state.mode === "tristan" && !state.privateMode;
     const isNew = !id;
-    const lead = id ? state.leads.find(l => l.id === id) : null;
+    const lead = id ? activeLeads().find(l => l.id === id) : null;
     // Tristán no tiene ningún permiso de edición sobre leads que Joaquín
     // todavía no movió más allá de "Contactado" — esa etapa es enteramente
     // suya. Tristán solo puede consultarlos (vía el toggle "Contactados").
@@ -1426,11 +1508,18 @@
     });
 
     renderRecontactoBlock(lead, isClientMode);
-    renderHistory(lead);
-    if(lead) fetchHistory(lead.id).then(() => renderHistory(lead));
+    // lead_history y lead_novedades referencian leads(id), no
+    // leads_privados_tristan(id) — no aplican a un lead que todavía no se compartió.
+    if(!state.privateMode){
+      renderHistory(lead);
+      if(lead) fetchHistory(lead.id).then(() => renderHistory(lead));
 
-    renderNovedades(lead);
-    if(lead) fetchNovedades(lead.id).then(() => renderNovedades(lead));
+      renderNovedades(lead);
+      if(lead) fetchNovedades(lead.id).then(() => renderNovedades(lead));
+    } else {
+      historyField.style.display = "none";
+      novedadesField.style.display = "none";
+    }
 
     // Foot buttons
     let footHtml = "";
@@ -1445,6 +1534,7 @@
       footHtml = `
         ${!isNew ? `<button class="btn btn-danger" id="deleteBtn">Eliminar</button>` : ""}
         ${!isNew ? `<button class="btn btn-ghost" id="archiveActionBtn">Archivar</button>` : ""}
+        ${state.privateMode && !isNew ? `<button class="btn btn-accent" id="compartirBtn">Compartir con Joaquín</button>` : ""}
         <span style="flex:1 1 auto"></span>
         <button class="btn btn-ghost" id="cancelBtn">Cancelar</button>
         <button class="btn btn-accent" id="saveBtn">${isNew ? "Crear lead" : "Guardar"}</button>
@@ -1460,13 +1550,24 @@
     if(deleteBtn) deleteBtn.addEventListener("click", () => deleteConfirm.classList.add("show"));
     const archiveActionBtn = document.getElementById("archiveActionBtn");
     if(archiveActionBtn) archiveActionBtn.addEventListener("click", async () => {
-      const lead = state.leads.find(l => l.id === state.editingId);
+      const lead = activeLeads().find(l => l.id === state.editingId);
       if(lead){
         lead.archived = true;
         toast("Lead archivado");
-        const { error } = await supa.from("leads").update({ archived: true }).eq("id", lead.id);
+        const { error } = await supa.from(activeTable()).update({ archived: true }).eq("id", lead.id);
         if(error){ console.error(error); toast("No se pudo archivar"); }
       }
+      closeLeadModal();
+      render();
+    });
+    const compartirBtn = document.getElementById("compartirBtn");
+    if(compartirBtn) compartirBtn.addEventListener("click", async () => {
+      const lead = state.privados.find(l => l.id === state.editingId);
+      if(!lead) return;
+      const { error } = await supa.rpc("compartir_lead_tristan", { p_lead_id: lead.id });
+      if(error){ console.error(error); toast("No se pudo compartir el lead"); return; }
+      state.privados = state.privados.filter(l => l.id !== lead.id);
+      toast("Lead compartido con Joaquín");
       closeLeadModal();
       render();
     });
@@ -1486,9 +1587,11 @@
   async function patchLead(lead, patch, successToast){
     Object.assign(lead, patch);
     if(successToast) toast(successToast);
-    const { error } = await supa.from("leads").update(patch).eq("id", lead.id);
+    const { error } = await supa.from(activeTable()).update(patch).eq("id", lead.id);
     if(error){ console.error(error); toast("No se pudo guardar el cambio"); }
-    fetchHistory(lead.id).then(() => { if(state.editingId === lead.id) renderHistory(lead); });
+    if(!state.privateMode){
+      fetchHistory(lead.id).then(() => { if(state.editingId === lead.id) renderHistory(lead); });
+    }
   }
 
   function startRecontacto(lead, isClientMode){
@@ -1714,12 +1817,12 @@
         recontacto_stage: 1,
         created_by: state.session.user.id,
       };
-      const { data, error } = await supa.from("leads").insert(payload).select().single();
+      const { data, error } = await supa.from(activeTable()).insert(payload).select().single();
       if(error){ console.error(error); toast("No se pudo crear el lead"); return; }
-      state.leads.push(data);
+      activeLeads().push(data);
       toast("Lead creado");
     } else {
-      const lead = state.leads.find(l => l.id === state.editingId);
+      const lead = activeLeads().find(l => l.id === state.editingId);
       if(!lead) return;
       let patch;
       if(isClientMode){
@@ -1742,7 +1845,7 @@
         };
       }
       Object.assign(lead, patch);
-      const { error } = await supa.from("leads").update(patch).eq("id", lead.id);
+      const { error } = await supa.from(activeTable()).update(patch).eq("id", lead.id);
       if(error){ console.error(error); toast("No se pudo guardar el cambio"); return; }
       toast("Cambios guardados");
     }
@@ -1752,14 +1855,15 @@
 
   document.getElementById("cancelDeleteBtn").addEventListener("click", () => deleteConfirm.classList.remove("show"));
   document.getElementById("confirmDeleteBtn").addEventListener("click", async () => {
-    const idx = state.leads.findIndex(l => l.id === state.editingId);
+    const list = activeLeads();
+    const idx = list.findIndex(l => l.id === state.editingId);
     if(idx > -1){
-      const id = state.leads[idx].id;
-      state.leads.splice(idx, 1);
+      const id = list[idx].id;
+      list.splice(idx, 1);
       toast("Lead movido a la papelera");
       closeLeadModal();
       render();
-      const { error } = await supa.from("leads").update({ trashed_at: new Date().toISOString() }).eq("id", id);
+      const { error } = await supa.from(activeTable()).update({ trashed_at: new Date().toISOString() }).eq("id", id);
       if(error){ console.error(error); toast("No se pudo eliminar el lead"); }
       return;
     }
@@ -1777,7 +1881,7 @@
   const archiveList = document.getElementById("archiveList");
 
   function renderArchiveList(){
-    const archived = state.leads.filter(l => l.archived);
+    const archived = activeLeads().filter(l => l.archived);
     if(!archived.length){
       archiveList.innerHTML = `<div class="archive-empty">No hay leads archivados.</div>`;
       return;
@@ -1794,13 +1898,13 @@
     archiveList.querySelectorAll(".restore-btn").forEach(btn => {
       btn.addEventListener("click", async (e) => {
         const id = e.target.closest(".archive-row").dataset.id;
-        const lead = state.leads.find(l => l.id === id);
+        const lead = activeLeads().find(l => l.id === id);
         if(!lead) return;
         lead.archived = false;
         toast("Lead restaurado");
         renderArchiveList();
         render();
-        const { error } = await supa.from("leads").update({ archived: false }).eq("id", id);
+        const { error } = await supa.from(activeTable()).update({ archived: false }).eq("id", id);
         if(error){ console.error(error); toast("No se pudo restaurar"); }
       });
     });
@@ -1817,7 +1921,7 @@
   async function renderPapeleraList(){
     papeleraList.innerHTML = `<div class="archive-empty">Cargando…</div>`;
     const { data, error } = await supa
-      .from("leads")
+      .from(activeTable())
       .select("*")
       .not("trashed_at", "is", null)
       .order("trashed_at", { ascending: false });
@@ -1845,10 +1949,10 @@
     papeleraList.querySelectorAll(".restore-btn").forEach(btn => {
       btn.addEventListener("click", async (e) => {
         const id = e.target.closest(".archive-row").dataset.id;
-        const { error } = await supa.from("leads").update({ trashed_at: null }).eq("id", id);
+        const { error } = await supa.from(activeTable()).update({ trashed_at: null }).eq("id", id);
         if(error){ console.error(error); toast("No se pudo restaurar"); return; }
         toast("Lead restaurado");
-        await loadLeads();
+        await reloadActiveLeads();
         renderPapeleraList();
         render();
       });
@@ -1858,6 +1962,70 @@
   papeleraBtn.addEventListener("click", () => { renderPapeleraList(); papeleraOverlay.classList.add("open"); });
   document.getElementById("papeleraCloseBtn").addEventListener("click", () => papeleraOverlay.classList.remove("open"));
   papeleraOverlay.addEventListener("click", (e) => { if(e.target === papeleraOverlay) papeleraOverlay.classList.remove("open"); });
+
+  /* ============ Import a Gestión Privada (paste desde Google Sheets / CSV) ============ */
+  const importOverlay = document.getElementById("importOverlay");
+  const importText = document.getElementById("importText");
+  const importPreview = document.getElementById("importPreview");
+
+  // Filas separadas por tabulación (paste directo de Sheets) o por coma (CSV).
+  // Orden fijo: Empresa, Contacto, Teléfono, Rubro, Ticket, Fuente, Notas.
+  function parseImportRows(text){
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    return lines.map(line => {
+      const cols = (line.includes("\t") ? line.split("\t") : line.split(",")).map(c => (c||"").trim());
+      const [empresa, contacto, telefono, rubroRaw, ticketRaw, fuente, notas] = cols;
+      let rubro = "otro";
+      if(rubroRaw){
+        const rl = rubroRaw.toLowerCase();
+        const found = Object.keys(RUBROS).find(k => k === rl || RUBROS[k].toLowerCase() === rl);
+        if(found) rubro = found;
+      }
+      const ticket = Number(String(ticketRaw || "").replace(/[^\d.]/g, "")) || 0;
+      return {
+        empresa: empresa || "", contacto: contacto || "", telefono: telefono || "",
+        rubro, ticket, fuente: fuente || "", notas: notas || "",
+      };
+    }).filter(r => r.empresa);
+  }
+
+  function renderImportPreview(){
+    const rows = parseImportRows(importText.value);
+    importPreview.innerHTML = rows.length
+      ? `<div class="archive-empty">${rows.length} fila(s) lista(s): ${rows.map(r => escapeHtml(r.empresa)).join(", ")}</div>`
+      : `<div class="archive-empty">Pegá filas para ver la vista previa. Las líneas sin Empresa se descartan.</div>`;
+    return rows;
+  }
+
+  importText.addEventListener("input", renderImportPreview);
+
+  importSheetsBtn.addEventListener("click", () => {
+    importText.value = "";
+    renderImportPreview();
+    importOverlay.classList.add("open");
+  });
+  document.getElementById("importCloseBtn").addEventListener("click", () => importOverlay.classList.remove("open"));
+  document.getElementById("importCancelBtn").addEventListener("click", () => importOverlay.classList.remove("open"));
+  importOverlay.addEventListener("click", (e) => { if(e.target === importOverlay) importOverlay.classList.remove("open"); });
+
+  document.getElementById("importConfirmBtn").addEventListener("click", async () => {
+    const rows = parseImportRows(importText.value);
+    if(!rows.length){ toast("No se encontraron filas válidas (falta Empresa)"); return; }
+    const payload = rows.map(r => ({
+      empresa: r.empresa, contacto: r.contacto, telefono: r.telefono, rubro: r.rubro,
+      ticket: r.ticket, fuente: r.fuente, notas: r.notas,
+      etapa: "nuevo", archived: false, cierre: null,
+      recontacto_active: false, recontacto_stage: 1,
+      created_by: state.session.user.id,
+    }));
+    const { data, error } = await supa.from("leads_privados_tristan").insert(payload).select();
+    if(error){ console.error(error); toast("No se pudo importar"); return; }
+    state.privados.push(...(data || []));
+    toast(`${data.length} lead(s) importado(s)`);
+    importOverlay.classList.remove("open");
+    importText.value = "";
+    render();
+  });
 
   /* ============ Cliente modal (Cartera) ============ */
   const clienteOverlay = document.getElementById("clienteOverlay");
@@ -1992,6 +2160,7 @@
       if(clienteOverlay.classList.contains("open")) closeClienteModal();
       if(archiveOverlay.classList.contains("open")) archiveOverlay.classList.remove("open");
       if(papeleraOverlay.classList.contains("open")) papeleraOverlay.classList.remove("open");
+      if(importOverlay.classList.contains("open")) importOverlay.classList.remove("open");
     }
   });
 
@@ -2018,6 +2187,7 @@
     if(realtimeChannel) return;
     realtimeChannel = supa.channel("leads-changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, handleLeadRealtime)
+      .on("postgres_changes", { event: "*", schema: "public", table: "leads_privados_tristan" }, handlePrivadoRealtime)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "lead_history" }, handleHistoryRealtime)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "lead_novedades" }, handleNovedadRealtime)
       .on("postgres_changes", { event: "*", schema: "public", table: "clientes" }, handleClienteRealtime)
@@ -2059,6 +2229,24 @@
     render();
   }
 
+  function handlePrivadoRealtime(payload){
+    if(payload.eventType === "DELETE"){
+      state.privados = state.privados.filter(l => l.id !== payload.old.id);
+      render();
+      return;
+    }
+    const row = payload.new;
+    if(row.trashed_at){
+      state.privados = state.privados.filter(l => l.id !== row.id);
+      render();
+      if(papeleraOverlay.classList.contains("open")) renderPapeleraList();
+      return;
+    }
+    const idx = state.privados.findIndex(l => l.id === row.id);
+    if(idx > -1) state.privados[idx] = row; else state.privados.push(row);
+    render();
+  }
+
   function handleHistoryRealtime(payload){
     const row = payload.new;
     if(!state.historyCache[row.lead_id]) state.historyCache[row.lead_id] = [];
@@ -2090,6 +2278,20 @@
       .order("created_at", { ascending: true });
     if(error){ console.error(error); toast("No se pudieron cargar los leads"); return; }
     state.leads = data || [];
+  }
+
+  async function loadPrivados(){
+    const { data, error } = await supa
+      .from("leads_privados_tristan")
+      .select("*")
+      .is("trashed_at", null)
+      .order("created_at", { ascending: true });
+    if(error){ console.error(error); toast("No se pudieron cargar los leads de la Gestión Privada"); return; }
+    state.privados = data || [];
+  }
+
+  async function reloadActiveLeads(){
+    if(state.privateMode) await loadPrivados(); else await loadLeads();
   }
 
   async function loadClientes(){
@@ -2145,7 +2347,9 @@
     userBadgeLabel.textContent = data.rol === "joaquin" ? "Joaquín" : "Tristán";
     userBadge.title = data.email;
 
-    await Promise.all([loadLeads(), loadClientes()]);
+    const loads = [loadLeads(), loadClientes()];
+    if(state.mode === "tristan") loads.push(loadPrivados());
+    await Promise.all(loads);
     subscribeRealtime();
     state.activeMobileColumn = currentColumns()[0].key;
     render();
