@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>Trimartex CRM</title>
 <meta name="theme-color" content="#0a0a0c">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack.min.css">
 <style>
   :root{
     --bg: #0a0a0c;
@@ -564,6 +565,60 @@
     .privada-toggle span{ display:none; }
     .privada-toggle{ padding:9px 12px; }
   }
+
+  /* ============ Reportes (Etapa 3) ============ */
+  /* Paleta categórica validada (dataviz skill, modo dark, orden fijo — nunca
+     ciclado). Sirve solo para codificar datos en los gráficos; el chrome
+     (texto/grillas/superficies) reutiliza los tokens del resto de la app. */
+  :root{
+    --series-1: #3987e5; /* azul */
+    --series-2: #d95926; /* naranja */
+    --series-3: #199e70; /* aqua */
+    --series-4: #c98500; /* amarillo */
+    --series-5: #d55181; /* magenta */
+    --series-6: #008300; /* verde */
+    --series-7: #9085e9; /* violeta */
+    --status-good: #0ca30c;
+    --status-critical: #d03b3b;
+  }
+  .reportes-wrap{ padding: 16px 20px 40px; overflow-y:auto; height:100%; box-sizing:border-box; }
+  .reporte-section{ margin-bottom: 28px; }
+  .reporte-section-title{ font-size:15px; font-weight:700; margin: 0 0 4px; }
+  .reporte-section-sub{ font-size:12.5px; color:var(--text-faint); margin: 0 0 12px; }
+  .grid-stack{ background: transparent; }
+  .grid-stack-item-content{
+    background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg);
+    display:flex; flex-direction:column; overflow:hidden; inset: 4px !important;
+  }
+  .widget-head{
+    display:flex; align-items:center; gap:8px; padding: 10px 12px;
+    border-bottom:1px solid var(--border-soft); flex:0 0 auto; cursor:grab;
+  }
+  .widget-head:active{ cursor:grabbing; }
+  .widget-title{ font-size:12.5px; font-weight:700; color:var(--text-dim); flex:1 1 auto; }
+  .widget-hide-btn{
+    width:22px; height:22px; border-radius:6px; border:none; background:transparent;
+    color:var(--text-faint); display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .widget-hide-btn:hover{ background: var(--surface-2); color:var(--text); }
+  .widget-hide-btn svg{ width:14px; height:14px; }
+  .widget-body{ flex:1 1 auto; min-height:0; padding: 10px 14px; display:flex; flex-direction:column; }
+  .widget-body.widget-body-chart{ padding: 6px 10px 10px; }
+  .widget-stat-value{ font-size: clamp(20px, 4vw, 30px); font-weight:800; line-height:1.1; }
+  .widget-stat-delta{ font-size:12px; font-weight:700; margin-top:4px; }
+  .widget-stat-delta.up{ color: var(--status-good); }
+  .widget-stat-delta.down{ color: var(--status-critical); }
+  .widget-stat-sub{ font-size:11.5px; color:var(--text-faint); margin-top:auto; padding-top:6px; }
+  .widget-chart-canvas-wrap{ position:relative; flex:1 1 auto; min-height:0; }
+  .hidden-widgets-bar{
+    display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top: 6px;
+  }
+  .hidden-widget-chip{
+    display:inline-flex; align-items:center; gap:6px; background:var(--surface);
+    border:1px dashed var(--border); border-radius:999px; padding:6px 12px;
+    font-size:12px; color:var(--text-dim); cursor:pointer;
+  }
+  .hidden-widget-chip:hover{ background:var(--surface-2); color:var(--text); }
 </style>
 </head>
 <body>
@@ -593,6 +648,7 @@
       <button data-page="recontacto">Recontacto<span class="pill-count" id="recontactoCount" style="display:none;">0</span></button>
       <button data-page="cartera">Cartera<span class="pill-count" id="carteraCount" style="display:none;">0</span></button>
       <button data-page="contactados" id="contactadosToggleBtn" style="display:none;">Contactados<span class="pill-count" id="contactadosCount" style="display:none;">0</span></button>
+      <button data-page="reportes" id="reportesToggleBtn">Reportes</button>
     </div>
 
     <button class="privada-toggle" id="privadaToggleBtn" style="display:none;" title="Alternar Gestión Privada">
@@ -647,6 +703,20 @@
 
   <main class="board-wrap">
     <div class="board" id="board"></div>
+    <div class="reportes-wrap" id="reportesWrap" style="display:none;">
+      <div class="reporte-section">
+        <h2 class="reporte-section-title">Leads JP</h2>
+        <p class="reporte-section-sub">Desempeño del pipeline compartido. Arrastrá, redimensioná u ocultá cada widget — se guarda por usuario.</p>
+        <div class="grid-stack" id="gridJP"></div>
+        <div class="hidden-widgets-bar" id="hiddenBarJP"></div>
+      </div>
+      <div class="reporte-section" id="sectionTristan" style="display:none;">
+        <h2 class="reporte-section-title">Gestión Comercial Tristán</h2>
+        <p class="reporte-section-sub">Incluye tu Gestión Privada y los leads compartidos que gestionás. Solo vos lo ves.</p>
+        <div class="grid-stack" id="gridTristan"></div>
+        <div class="hidden-widgets-bar" id="hiddenBarTristan"></div>
+      </div>
+    </div>
   </main>
 
 </div>
@@ -936,6 +1006,8 @@
 <div id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="/env.js"></script>
 <script>
 (function(){
@@ -1023,6 +1095,8 @@
     notificaciones: [],     // bandeja propia (RLS ya filtra por destinatario)
     preferencias: null,     // fila propia de preferencias_notificacion
     recordatoriosCache: {}, // leadId (compartido o privado) -> recordatorios[]
+    reporteLayouts: {},     // "leads_jp" | "gestion_tristan" -> { items:{widgetId:{x,y,w,h}}, hidden:[widgetId] }
+    chartInstances: {},     // canvasId -> instancia Chart.js viva
   };
 
   // Fuente de datos activa del pipeline/recontacto: la Gestión Privada de
@@ -1169,25 +1243,41 @@
   const boardEl = document.getElementById("board");
   const mobileTabsEl = document.getElementById("mobileTabs");
   const carteraFiltersEl = document.getElementById("carteraFilters");
+  const reportesWrapEl = document.getElementById("reportesWrap");
+
+  let lastPage = null;
 
   function render(){
     renderPageToggle();
     applyModeUI();
-    if(state.page === "cartera"){
+    if(state.page === "reportes"){
+      mobileTabsEl.style.display = "none";
+      carteraFiltersEl.style.display = "none";
+      boardEl.style.display = "none";
+      reportesWrapEl.style.display = "block";
+      if(lastPage !== "reportes") renderReportesPage();
+    } else if(state.page === "cartera"){
+      boardEl.style.display = "";
+      reportesWrapEl.style.display = "none";
       mobileTabsEl.style.display = "none";
       carteraFiltersEl.style.display = "flex";
       renderCarteraFilters();
       renderCarteraBoard();
     } else if(state.page === "contactados"){
+      boardEl.style.display = "";
+      reportesWrapEl.style.display = "none";
       mobileTabsEl.style.display = "none";
       carteraFiltersEl.style.display = "none";
       renderContactadosBoard();
     } else {
+      boardEl.style.display = "";
+      reportesWrapEl.style.display = "none";
       carteraFiltersEl.style.display = "none";
       mobileTabsEl.style.display = "";
       renderMobileTabs();
       renderBoard();
     }
+    lastPage = state.page;
   }
 
   function renderPageToggle(){
@@ -1483,16 +1573,17 @@
 
   function applyModeUI(){
     const isCartera = state.page === "cartera";
+    const isReportes = state.page === "reportes";
     const isPrivate = state.privateMode;
     newLeadBtn.style.display = (!isCartera && (state.mode === "joaquin" || isPrivate) && state.page === "pipeline") ? "flex" : "none";
-    archiveBtn.style.display = (!isCartera && (state.mode === "joaquin" || isPrivate)) ? "flex" : "none";
-    papeleraBtn.style.display = (!isCartera && (state.mode === "joaquin" || isPrivate)) ? "flex" : "none";
+    archiveBtn.style.display = (!isCartera && !isReportes && (state.mode === "joaquin" || isPrivate)) ? "flex" : "none";
+    papeleraBtn.style.display = (!isCartera && !isReportes && (state.mode === "joaquin" || isPrivate)) ? "flex" : "none";
     newClienteBtn.style.display = isCartera ? "flex" : "none";
-    contactadosToggleBtn.style.display = (state.mode === "tristan" && !isPrivate) ? "" : "none";
-    privadaToggleBtn.style.display = state.mode === "tristan" ? "flex" : "none";
+    contactadosToggleBtn.style.display = (state.mode === "tristan" && !isPrivate && !isReportes) ? "" : "none";
+    privadaToggleBtn.style.display = (state.mode === "tristan" && !isReportes) ? "flex" : "none";
     privadaToggleBtn.classList.toggle("active-private", isPrivate);
     privadaToggleLabel.textContent = isPrivate ? "Volver al pipeline" : "Gestión Privada";
-    importSheetsBtn.style.display = isPrivate ? "flex" : "none";
+    importSheetsBtn.style.display = (isPrivate && !isReportes) ? "flex" : "none";
   }
 
   privadaToggleBtn.addEventListener("click", () => {
@@ -1507,7 +1598,7 @@
     const btn = e.target.closest("button[data-page]");
     if(!btn) return;
     if(btn.dataset.page === "contactados" && state.mode !== "tristan") return;
-    if(btn.dataset.page === "cartera" || btn.dataset.page === "contactados") state.privateMode = false;
+    if(btn.dataset.page === "cartera" || btn.dataset.page === "contactados" || btn.dataset.page === "reportes") state.privateMode = false;
     state.page = btn.dataset.page;
     if(state.page === "pipeline" || state.page === "recontacto") state.activeMobileColumn = currentColumns()[0].key;
     render();
@@ -2278,6 +2369,304 @@
     toast("Recordatorio creado");
   });
 
+  /* ============ Reportes (Etapa 3) ============ */
+  // Paleta categórica validada con el skill de dataviz (modo dark, orden fijo
+  // — nunca ciclada dentro de un mismo gráfico). Debe coincidir con las
+  // variables --series-N del CSS.
+  const SERIES_COLORS = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9"];
+
+  // "Leads JP" (Joaquín) y "Gestión Comercial Tristán" son estructuralmente el
+  // mismo reporte (mismos widgets) sobre datasets distintos, así que comparten
+  // esta definición. Posiciones/tamaños acá son solo el default inicial —
+  // cada usuario los reacomoda y eso se persiste en reporte_layout.
+  const WIDGET_DEFS = [
+    { id:"ventas",       title:"Ventas (cerrado)",        kind:"stat",      x:0, y:0, w:3, h:2 },
+    { id:"avance",       title:"Avance",                  kind:"stat",      x:3, y:0, w:3, h:2 },
+    { id:"crecimiento",  title:"Crecimiento",             kind:"stat",      x:6, y:0, w:3, h:2 },
+    { id:"tasa_cierre",  title:"Tasa de cierre",          kind:"stat",      x:9, y:0, w:3, h:2 },
+    { id:"antiguedad",   title:"Antigüedad promedio",     kind:"stat",      x:0, y:2, w:3, h:2 },
+    { id:"por_etapa",    title:"Leads por etapa",         kind:"bar_etapa", x:3, y:2, w:5, h:4 },
+    { id:"por_rubro",    title:"Conversión por rubro",    kind:"bar_rubro", x:8, y:2, w:4, h:4 },
+  ];
+
+  const REPORTE_CONFIG = {
+    leads_jp:         { gridId: "gridJP",      hiddenBarId: "hiddenBarJP" },
+    gestion_tristan:  { gridId: "gridTristan", hiddenBarId: "hiddenBarTristan" },
+  };
+
+  const gridInstances = {};   // reporte -> instancia GridStack
+  const persistTimers = {};   // reporte -> timeout id (debounce de guardado)
+
+  // Leads en los que se basa cada reporte. "leads_jp" es el pipeline
+  // compartido tal cual (ya visible para ambos roles vía RLS); el de Tristán
+  // suma su Gestión Privada completa más la porción del pipeline compartido
+  // que él gestiona (las mismas etapas de TRISTAN_VISIBLE).
+  function leadsParaReporte(reporte){
+    if(reporte === "gestion_tristan"){
+      return [...state.privados, ...state.leads.filter(l => TRISTAN_VISIBLE.includes(l.etapa))];
+    }
+    return state.leads;
+  }
+
+  function computeReportMetrics(leadsArr){
+    const activos = leadsArr.filter(l => !l.archived);
+    const etapasAvanzadas = ["contactado", "cotizacion_pendiente", "cotizacion_enviada", "seguimiento", "cerrado"];
+    const avanzados = activos.filter(l => etapasAvanzadas.includes(l.etapa)).length;
+    const avance = activos.length ? Math.round((avanzados / activos.length) * 100) : 0;
+
+    const ventas = leadsArr
+      .filter(l => l.etapa === "cerrado" && l.cierre === "cerrado")
+      .reduce((sum, l) => sum + (Number(l.ticket) || 0), 0);
+
+    const cerrados = leadsArr.filter(l => l.cierre === "cerrado").length;
+    const noCerrados = leadsArr.filter(l => l.cierre === "no_cerrado").length;
+    const tasaCierre = (cerrados + noCerrados) ? Math.round((cerrados / (cerrados + noCerrados)) * 100) : null;
+
+    const now = new Date();
+    const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
+    const inicioMesAnterior = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const nuevosEsteMes = leadsArr.filter(l => new Date(l.created_at) >= inicioMes).length;
+    const nuevosMesAnterior = leadsArr.filter(l => {
+      const d = new Date(l.created_at);
+      return d >= inicioMesAnterior && d < inicioMes;
+    }).length;
+    let crecimiento;
+    if(nuevosMesAnterior > 0) crecimiento = Math.round(((nuevosEsteMes - nuevosMesAnterior) / nuevosMesAnterior) * 100);
+    else crecimiento = nuevosEsteMes > 0 ? 100 : 0;
+
+    const activosNoCerrados = activos.filter(l => l.etapa !== "cerrado");
+    const antiguedad = activosNoCerrados.length
+      ? Math.round(activosNoCerrados.reduce((sum, l) => sum + (now - new Date(l.created_at)) / 86400000, 0) / activosNoCerrados.length)
+      : 0;
+
+    const porEtapa = {};
+    COLUMNS.forEach(c => { porEtapa[c.key] = 0; });
+    activos.forEach(l => { if(porEtapa[l.etapa] !== undefined) porEtapa[l.etapa]++; });
+
+    const porRubro = {};
+    Object.keys(RUBROS).forEach(r => { porRubro[r] = { total: 0, cerrados: 0 }; });
+    leadsArr.forEach(l => {
+      if(l.archived || !porRubro[l.rubro]) return;
+      porRubro[l.rubro].total++;
+      if(l.etapa === "cerrado" && l.cierre === "cerrado") porRubro[l.rubro].cerrados++;
+    });
+
+    return { ventas, avance, crecimiento, tasaCierre, antiguedad, porEtapa, porRubro, nuevosEsteMes, nuevosMesAnterior };
+  }
+
+  function widgetStatHtml(def, metrics){
+    let value = "—", sub = "", deltaHtml = "";
+    if(def.id === "ventas"){
+      value = formatARS(metrics.ventas);
+      sub = "leads cerrados y ganados";
+    } else if(def.id === "avance"){
+      value = metrics.avance + "%";
+      sub = "leads activos que ya avanzaron de Nuevo";
+    } else if(def.id === "crecimiento"){
+      value = (metrics.crecimiento >= 0 ? "+" : "") + metrics.crecimiento + "%";
+      sub = `${metrics.nuevosEsteMes} nuevos este mes vs ${metrics.nuevosMesAnterior} el anterior`;
+      deltaHtml = `<div class="widget-stat-delta ${metrics.crecimiento >= 0 ? "up" : "down"}">${metrics.crecimiento >= 0 ? "▲" : "▼"} vs. mes anterior</div>`;
+    } else if(def.id === "tasa_cierre"){
+      value = metrics.tasaCierre === null ? "—" : metrics.tasaCierre + "%";
+      sub = "sobre leads con cierre definido (cerrado o no cerrado)";
+    } else if(def.id === "antiguedad"){
+      value = metrics.antiguedad + " días";
+      sub = "promedio de leads activos sin cerrar";
+    }
+    return `<div class="widget-stat-value">${escapeHtml(value)}</div>${deltaHtml}${sub ? `<div class="widget-stat-sub">${escapeHtml(sub)}</div>` : ""}`;
+  }
+
+  function destroyChart(canvasId){
+    if(state.chartInstances[canvasId]){
+      state.chartInstances[canvasId].destroy();
+      delete state.chartInstances[canvasId];
+    }
+  }
+
+  function renderBarEtapaChart(canvasId, porEtapa){
+    destroyChart(canvasId);
+    const canvas = document.getElementById(canvasId);
+    if(!canvas || typeof Chart === "undefined") return;
+    state.chartInstances[canvasId] = new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels: COLUMNS.map(c => c.label),
+        datasets: [{
+          data: COLUMNS.map(c => porEtapa[c.key] || 0),
+          backgroundColor: COLUMNS.map((_, i) => SERIES_COLORS[i % SERIES_COLORS.length]),
+          borderRadius: 4,
+          maxBarThickness: 28,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: "#a9a9b0", font: { size: 10 } }, grid: { display: false } },
+          y: { beginAtZero: true, ticks: { color: "#a9a9b0", precision: 0 }, grid: { color: "#2a2a2e" } },
+        },
+      },
+    });
+  }
+
+  function renderBarRubroChart(canvasId, porRubro){
+    destroyChart(canvasId);
+    const canvas = document.getElementById(canvasId);
+    if(!canvas || typeof Chart === "undefined") return;
+    const keys = Object.keys(RUBROS);
+    state.chartInstances[canvasId] = new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels: keys.map(k => RUBROS[k]),
+        datasets: [{
+          data: keys.map(k => porRubro[k] && porRubro[k].total ? Math.round((porRubro[k].cerrados / porRubro[k].total) * 100) : 0),
+          backgroundColor: keys.map((_, i) => SERIES_COLORS[i % SERIES_COLORS.length]),
+          borderRadius: 4,
+          maxBarThickness: 28,
+        }],
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (ctx) => ctx.parsed.x + "% cerrado" } },
+        },
+        scales: {
+          x: { beginAtZero: true, max: 100, ticks: { color: "#a9a9b0", callback: (v) => v + "%" }, grid: { color: "#2a2a2e" } },
+          y: { ticks: { color: "#a9a9b0", font: { size: 10 } }, grid: { display: false } },
+        },
+      },
+    });
+  }
+
+  async function loadReporteLayouts(){
+    const { data, error } = await supa.from("reporte_layout").select("*").eq("email", state.userRow.email);
+    if(error){ console.error(error); return; }
+    state.reporteLayouts = {};
+    (data || []).forEach(row => { state.reporteLayouts[row.reporte] = row.layout || {}; });
+  }
+
+  function persistReportLayout(reporte, grid, hiddenSet){
+    clearTimeout(persistTimers[reporte]);
+    persistTimers[reporte] = setTimeout(async () => {
+      const saved = grid.save(false);
+      const items = {};
+      (Array.isArray(saved) ? saved : []).forEach(it => {
+        if(it.id) items[it.id] = { x: it.x, y: it.y, w: it.w, h: it.h };
+      });
+      const layout = { items, hidden: Array.from(hiddenSet) };
+      state.reporteLayouts[reporte] = layout;
+      const { error } = await supa.from("reporte_layout").upsert(
+        { email: state.userRow.email, reporte, layout },
+        { onConflict: "email,reporte" },
+      );
+      if(error) console.error(error);
+    }, 400);
+  }
+
+  function renderHiddenBar(reporte, hiddenSet){
+    const cfg = REPORTE_CONFIG[reporte];
+    const bar = document.getElementById(cfg.hiddenBarId);
+    if(!bar) return;
+    const hiddenDefs = WIDGET_DEFS.filter(d => hiddenSet.has(d.id));
+    bar.innerHTML = hiddenDefs.map(d => `<button type="button" class="hidden-widget-chip" data-widget="${d.id}">+ ${escapeHtml(d.title)}</button>`).join("");
+    bar.querySelectorAll(".hidden-widget-chip").forEach(chip => {
+      chip.addEventListener("click", () => {
+        const id = chip.dataset.widget;
+        const grid = gridInstances[reporte];
+        const gridEl = document.getElementById(cfg.gridId);
+        const el = gridEl && gridEl.querySelector(`[gs-id="${id}"]`);
+        if(!grid || !el) return;
+        const def = WIDGET_DEFS.find(d => d.id === id);
+        grid.addWidget(el, { x: def.x, y: def.y, w: def.w, h: def.h });
+        hiddenSet.delete(id);
+        renderHiddenBar(reporte, hiddenSet);
+        persistReportLayout(reporte, grid, hiddenSet);
+      });
+    });
+  }
+
+  function buildReportGrid(reporte){
+    const cfg = REPORTE_CONFIG[reporte];
+    const container = document.getElementById(cfg.gridId);
+    if(!container || typeof GridStack === "undefined") return;
+
+    if(gridInstances[reporte]){
+      gridInstances[reporte].destroy(false);
+      gridInstances[reporte] = null;
+    }
+
+    const metrics = computeReportMetrics(leadsParaReporte(reporte));
+    const saved = state.reporteLayouts[reporte] || {};
+    const savedItems = saved.items || {};
+    const hiddenSet = new Set(saved.hidden || []);
+
+    container.innerHTML = WIDGET_DEFS.map(def => {
+      const pos = savedItems[def.id] || def;
+      return `
+      <div class="grid-stack-item" gs-id="${def.id}" gs-x="${pos.x}" gs-y="${pos.y}" gs-w="${pos.w}" gs-h="${pos.h}">
+        <div class="grid-stack-item-content">
+          <div class="widget-head">
+            <span class="widget-title">${escapeHtml(def.title)}</span>
+            <button type="button" class="widget-hide-btn" data-widget="${def.id}" title="Ocultar widget">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.4 9.4 0 0112 5c5 0 9 4 10 7-.4 1.1-1.2 2.4-2.3 3.6M6.7 6.7C4.6 8 3.1 10 2 12c1 3 5 7 10 7 1.4 0 2.7-.3 3.9-.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <div class="widget-body ${def.kind !== "stat" ? "widget-body-chart" : ""}" id="body_${reporte}_${def.id}"></div>
+        </div>
+      </div>`;
+    }).join("");
+
+    WIDGET_DEFS.forEach(def => {
+      const bodyEl = document.getElementById(`body_${reporte}_${def.id}`);
+      if(!bodyEl) return;
+      bodyEl.innerHTML = def.kind === "stat"
+        ? widgetStatHtml(def, metrics)
+        : `<div class="widget-chart-canvas-wrap"><canvas id="chart_${reporte}_${def.id}"></canvas></div>`;
+    });
+
+    const grid = GridStack.init({ cellHeight: 70, margin: 8, float: true, animate: true }, container);
+    gridInstances[reporte] = grid;
+
+    WIDGET_DEFS.forEach(def => {
+      if(hiddenSet.has(def.id)){
+        const el = container.querySelector(`[gs-id="${def.id}"]`);
+        if(el) grid.removeWidget(el, false);
+      }
+    });
+
+    renderHiddenBar(reporte, hiddenSet);
+
+    container.querySelectorAll(".widget-hide-btn").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.widget;
+        const el = btn.closest(".grid-stack-item");
+        grid.removeWidget(el, false);
+        hiddenSet.add(id);
+        renderHiddenBar(reporte, hiddenSet);
+        persistReportLayout(reporte, grid, hiddenSet);
+      });
+    });
+
+    grid.on("change", () => persistReportLayout(reporte, grid, hiddenSet));
+
+    WIDGET_DEFS.forEach(def => {
+      if(hiddenSet.has(def.id)) return;
+      if(def.kind === "bar_etapa") renderBarEtapaChart(`chart_${reporte}_${def.id}`, metrics.porEtapa);
+      if(def.kind === "bar_rubro") renderBarRubroChart(`chart_${reporte}_${def.id}`, metrics.porRubro);
+    });
+  }
+
+  function renderReportesPage(){
+    document.getElementById("sectionTristan").style.display = state.mode === "tristan" ? "block" : "none";
+    buildReportGrid("leads_jp");
+    if(state.mode === "tristan") buildReportGrid("gestion_tristan");
+  }
+
   /* ============ Cliente modal (Cartera) ============ */
   const clienteOverlay = document.getElementById("clienteOverlay");
   const clienteModalTitle = document.getElementById("clienteModalTitle");
@@ -2646,7 +3035,7 @@
     userBadgeLabel.textContent = data.rol === "joaquin" ? "Joaquín" : "Tristán";
     userBadge.title = data.email;
 
-    const loads = [loadLeads(), loadClientes(), loadNotificaciones(), loadPreferencias()];
+    const loads = [loadLeads(), loadClientes(), loadNotificaciones(), loadPreferencias(), loadReporteLayouts()];
     if(state.mode === "tristan") loads.push(loadPrivados());
     await Promise.all(loads);
     subscribeRealtime();
