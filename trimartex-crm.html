@@ -157,6 +157,7 @@
   .icon-btn svg{ width:16px; height:16px; }
   .icon-btn-faint{ opacity:.55; border-color:transparent; background:transparent; }
   .icon-btn-faint:hover{ opacity:1; background: var(--surface); }
+  .icon-btn-active{ border-color: var(--accent); color: var(--accent); }
 
   .privada-toggle{
     display:flex; align-items:center; gap:6px;
@@ -619,6 +620,22 @@
     font-size:12px; color:var(--text-dim); cursor:pointer;
   }
   .hidden-widget-chip:hover{ background:var(--surface-2); color:var(--text); }
+
+  /* ============ Filtros de cartera (Etapa 4) ============ */
+  .filtro-chips{ display:flex; flex-wrap:wrap; gap:8px; }
+  .filtro-chip{
+    background: var(--surface); border:1px solid var(--border); border-radius:999px;
+    padding:6px 13px; font-size:12.5px; color:var(--text-dim); cursor:pointer;
+    transition: all .15s ease;
+  }
+  .filtro-chip:hover{ background:var(--surface-2); color:var(--text); }
+  .filtro-chip.active{ background: var(--accent); border-color:var(--accent); color:#fff; }
+  .card-abc-pill{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:18px; height:18px; border-radius:5px; font-size:10.5px; font-weight:800;
+    background: var(--surface-2); color:var(--text-dim); border:1px solid var(--border);
+    flex:0 0 auto;
+  }
 </style>
 </head>
 <body>
@@ -640,6 +657,11 @@
       <input id="searchInput" type="text" placeholder="Buscar por empresa o rubro..." autocomplete="off">
       <button class="search-clear" id="searchClear" title="Limpiar"><svg viewBox="0 0 24 24" fill="none"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
     </div>
+
+    <button class="icon-btn" id="filtrosBtn" title="Filtros" style="position:relative;">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16M7 12h10M10 18h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      <span id="filtrosBadge" class="pill-count" style="display:none;position:absolute;top:2px;right:2px;">0</span>
+    </button>
 
     <div class="spacer"></div>
 
@@ -766,6 +788,16 @@
           <label>Ticket estimado (ARS)</label>
           <input type="number" id="in_ticket" min="0" step="1000" placeholder="0">
         </div>
+      </div>
+
+      <div class="field" id="f_abc">
+        <label>Clasificación ABC</label>
+        <select id="in_abc">
+          <option value="">Sin clasificar</option>
+          <option value="A">A</option>
+          <option value="B">B</option>
+          <option value="C">C</option>
+        </select>
       </div>
 
       <div class="field" id="f_fuente">
@@ -990,6 +1022,52 @@
   </div>
 </div>
 
+<!-- Filtros de cartera (Etapa 4) -->
+<div class="overlay" id="filtrosOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Filtros</h2>
+      <button class="modal-close" id="filtrosCloseBtn"><svg viewBox="0 0 24 24" fill="none"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Rubro</label>
+        <div class="filtro-chips" id="filtroRubroChips"></div>
+      </div>
+      <div class="field">
+        <label>Clasificación ABC</label>
+        <div class="filtro-chips" id="filtroAbcChips"></div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Creado desde</label>
+          <input type="date" id="filtro_creado_desde">
+        </div>
+        <div class="field">
+          <label>Creado hasta</label>
+          <input type="date" id="filtro_creado_hasta">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Última modificación desde</label>
+          <input type="date" id="filtro_mod_desde">
+        </div>
+        <div class="field">
+          <label>Última modificación hasta</label>
+          <input type="date" id="filtro_mod_hasta">
+        </div>
+      </div>
+      <p class="papelera-hint">Todos los filtros se combinan entre sí (Y lógico) y con la búsqueda de arriba.</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="filtrosLimpiarBtn">Limpiar filtros</button>
+      <span style="flex:1 1 auto"></span>
+      <button class="btn btn-accent" id="filtrosAplicarBtn">Aplicar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Login overlay -->
 <div class="auth-screen" id="loginScreen">
   <div class="auth-card">
@@ -1060,6 +1138,7 @@
     negativa:      "Negativa",
     a_confirmar:   "A confirmar",
   };
+  const ABC_LABELS = { A:"A", B:"B", C:"C", sin_clasificar:"Sin clasificar" };
 
   function today(){
     return new Date().toISOString().slice(0,10);
@@ -1084,6 +1163,12 @@
     mode: "joaquin",        // asignado automáticamente por email al loguearse
     page: "pipeline",       // "pipeline" | "recontacto" | "cartera" | "contactados"
     search: "",
+    filtros: {              // Etapa 4 — filtros de cartera del pipeline, combinables en AND
+      rubros: [],           // subset de RUBROS keys, [] = todos
+      abc: [],              // subset de "A"|"B"|"C"|"sin_clasificar", [] = todos
+      creadoDesde: "", creadoHasta: "",   // yyyy-mm-dd, comparado contra created_at
+      modDesde: "", modHasta: "",         // yyyy-mm-dd, comparado contra updated_at
+    },
     carteraFilter: "todos", // "todos" | "activo" | "inactivo"
     activeMobileColumn: null,
     editingId: null,
@@ -1177,19 +1262,42 @@
            (RUBROS[lead.rubro]||"").toLowerCase().includes(q);
   }
 
+  // Filtros de cartera (Etapa 4): se combinan entre sí en AND, y con la
+  // búsqueda de texto. Cada dimensión vacía ([]/"") no filtra nada.
+  function matchesFilters(lead){
+    const f = state.filtros;
+    if(f.rubros.length && !f.rubros.includes(lead.rubro)) return false;
+    if(f.abc.length){
+      const val = lead.clasificacion_abc || "sin_clasificar";
+      if(!f.abc.includes(val)) return false;
+    }
+    const creadoFecha = (lead.created_at || "").slice(0, 10);
+    const modFecha = (lead.updated_at || "").slice(0, 10);
+    if(f.creadoDesde && creadoFecha < f.creadoDesde) return false;
+    if(f.creadoHasta && creadoFecha > f.creadoHasta) return false;
+    if(f.modDesde && modFecha < f.modDesde) return false;
+    if(f.modHasta && modFecha > f.modHasta) return false;
+    return true;
+  }
+
+  function hayFiltrosActivos(){
+    const f = state.filtros;
+    return f.rubros.length > 0 || f.abc.length > 0 || !!f.creadoDesde || !!f.creadoHasta || !!f.modDesde || !!f.modHasta;
+  }
+
   // Leads visibles en el pipeline principal: no archivados y sin recontacto activo
   // (una vez enviado a Recontacto, el lead se gestiona sólo desde esa página).
   function leadsForPipelineColumn(colKey){
     return activeLeads().filter(l =>
       !l.archived && !l.recontacto_active &&
-      l.etapa === colKey && matchesSearch(l, state.search)
+      l.etapa === colKey && matchesSearch(l, state.search) && matchesFilters(l)
     );
   }
 
   function leadsForRecontactoStage(stageNum){
     return activeLeads().filter(l =>
       !l.archived && l.recontacto_active &&
-      l.recontacto_stage === stageNum && matchesSearch(l, state.search)
+      l.recontacto_stage === stageNum && matchesSearch(l, state.search) && matchesFilters(l)
     );
   }
 
@@ -1420,7 +1528,7 @@
     <article class="lead-card" data-id="${lead.id}">
       <div class="card-top">
         <div>
-          <div class="card-company">${escapeHtml(lead.empresa)}</div>
+          <div class="card-company">${escapeHtml(lead.empresa)}${lead.clasificacion_abc ? ` <span class="card-abc-pill" title="Clasificación ${escapeHtml(lead.clasificacion_abc)}">${escapeHtml(lead.clasificacion_abc)}</span>` : ""}</div>
           ${lead.contacto ? `<div class="card-contact">${escapeHtml(lead.contacto)}</div>` : ""}
         </div>
         <span class="card-tag tag-${lead.rubro}">${escapeHtml(RUBROS[lead.rubro] || "Otro")}</span>
@@ -1557,6 +1665,89 @@
     searchInput.value = ""; state.search = ""; searchClear.style.display = "none"; render(); searchInput.focus();
   });
 
+  /* ============ Filtros de cartera (Etapa 4) ============ */
+  const filtrosBtn = document.getElementById("filtrosBtn");
+  const filtrosBadge = document.getElementById("filtrosBadge");
+  const filtrosOverlay = document.getElementById("filtrosOverlay");
+  const filtroRubroChips = document.getElementById("filtroRubroChips");
+  const filtroAbcChips = document.getElementById("filtroAbcChips");
+  const filtroCreadoDesde = document.getElementById("filtro_creado_desde");
+  const filtroCreadoHasta = document.getElementById("filtro_creado_hasta");
+  const filtroModDesde = document.getElementById("filtro_mod_desde");
+  const filtroModHasta = document.getElementById("filtro_mod_hasta");
+
+  // Selección en edición dentro del panel (borrador); recién se copia a
+  // state.filtros al tocar "Aplicar", para no filtrar el board en vivo tecla
+  // a tecla ni con cada click de chip.
+  let filtroDraft = { rubros: [], abc: [] };
+
+  function renderFiltroChips(){
+    filtroRubroChips.innerHTML = Object.keys(RUBROS).map(k => `
+      <button type="button" class="filtro-chip ${filtroDraft.rubros.includes(k) ? "active" : ""}" data-rubro="${k}">${escapeHtml(RUBROS[k])}</button>
+    `).join("");
+    filtroAbcChips.innerHTML = Object.keys(ABC_LABELS).map(k => `
+      <button type="button" class="filtro-chip ${filtroDraft.abc.includes(k) ? "active" : ""}" data-abc="${k}">${escapeHtml(ABC_LABELS[k])}</button>
+    `).join("");
+    filtroRubroChips.querySelectorAll(".filtro-chip").forEach(chip => {
+      chip.addEventListener("click", () => {
+        const k = chip.dataset.rubro;
+        const idx = filtroDraft.rubros.indexOf(k);
+        if(idx > -1) filtroDraft.rubros.splice(idx, 1); else filtroDraft.rubros.push(k);
+        renderFiltroChips();
+      });
+    });
+    filtroAbcChips.querySelectorAll(".filtro-chip").forEach(chip => {
+      chip.addEventListener("click", () => {
+        const k = chip.dataset.abc;
+        const idx = filtroDraft.abc.indexOf(k);
+        if(idx > -1) filtroDraft.abc.splice(idx, 1); else filtroDraft.abc.push(k);
+        renderFiltroChips();
+      });
+    });
+  }
+
+  function renderFiltrosBadge(){
+    const f = state.filtros;
+    const n = f.rubros.length + f.abc.length +
+      (f.creadoDesde ? 1 : 0) + (f.creadoHasta ? 1 : 0) + (f.modDesde ? 1 : 0) + (f.modHasta ? 1 : 0);
+    filtrosBadge.style.display = n > 0 ? "inline-flex" : "none";
+    filtrosBadge.textContent = n;
+    filtrosBtn.classList.toggle("icon-btn-active", n > 0);
+  }
+
+  filtrosBtn.addEventListener("click", () => {
+    filtroDraft = { rubros: [...state.filtros.rubros], abc: [...state.filtros.abc] };
+    filtroCreadoDesde.value = state.filtros.creadoDesde;
+    filtroCreadoHasta.value = state.filtros.creadoHasta;
+    filtroModDesde.value = state.filtros.modDesde;
+    filtroModHasta.value = state.filtros.modHasta;
+    renderFiltroChips();
+    filtrosOverlay.classList.add("open");
+  });
+  document.getElementById("filtrosCloseBtn").addEventListener("click", () => filtrosOverlay.classList.remove("open"));
+  filtrosOverlay.addEventListener("click", (e) => { if(e.target === filtrosOverlay) filtrosOverlay.classList.remove("open"); });
+
+  document.getElementById("filtrosLimpiarBtn").addEventListener("click", () => {
+    state.filtros = { rubros: [], abc: [], creadoDesde: "", creadoHasta: "", modDesde: "", modHasta: "" };
+    renderFiltrosBadge();
+    filtrosOverlay.classList.remove("open");
+    render();
+  });
+
+  document.getElementById("filtrosAplicarBtn").addEventListener("click", () => {
+    state.filtros = {
+      rubros: [...filtroDraft.rubros],
+      abc: [...filtroDraft.abc],
+      creadoDesde: filtroCreadoDesde.value || "",
+      creadoHasta: filtroCreadoHasta.value || "",
+      modDesde: filtroModDesde.value || "",
+      modHasta: filtroModHasta.value || "",
+    };
+    renderFiltrosBadge();
+    filtrosOverlay.classList.remove("open");
+    render();
+  });
+
   /* ============ Page toggle & role badge ============ */
   const pageToggle = document.getElementById("pageToggle");
   const recontactoCountEl = document.getElementById("recontactoCount");
@@ -1619,6 +1810,7 @@
     telefono: document.getElementById("in_telefono"),
     rubro: document.getElementById("in_rubro"),
     ticket: document.getElementById("in_ticket"),
+    abc: document.getElementById("in_abc"),
     fuente: document.getElementById("in_fuente"),
     fecha: document.getElementById("in_fecha"),
     resultado: document.getElementById("in_resultado"),
@@ -1630,6 +1822,7 @@
     telefono: document.getElementById("f_telefono"),
     rubro: document.getElementById("f_rubro"),
     ticket: document.getElementById("f_ticket"),
+    abc: document.getElementById("f_abc"),
     fuente: document.getElementById("f_fuente"),
     fecha: document.getElementById("f_fecha"),
     resultado: document.getElementById("f_resultado"),
@@ -1661,6 +1854,7 @@
     fields.telefono.value = lead ? lead.telefono : "";
     fields.rubro.value = lead ? lead.rubro : "seguridad";
     fields.ticket.value = lead && lead.ticket ? lead.ticket : "";
+    fields.abc.value = lead && lead.clasificacion_abc ? lead.clasificacion_abc : "";
     fields.fuente.value = lead ? lead.fuente : "";
     fields.fecha.value = lead ? (lead.fecha_contacto || "") : today();
     fields.resultado.value = lead ? lead.resultado : "sin_respuesta";
@@ -1982,6 +2176,7 @@
         telefono: fields.telefono.value.trim(),
         rubro: fields.rubro.value,
         ticket: Number(fields.ticket.value) || 0,
+        clasificacion_abc: fields.abc.value || null,
         fuente: fields.fuente.value.trim(),
         fecha_contacto: fields.fecha.value || null,
         resultado: fields.resultado.value,
@@ -2014,6 +2209,7 @@
           telefono: fields.telefono.value.trim(),
           rubro: fields.rubro.value,
           ticket: Number(fields.ticket.value) || 0,
+          clasificacion_abc: fields.abc.value || null,
           fuente: fields.fuente.value.trim(),
           fecha_contacto: fields.fecha.value || null,
           resultado: fields.resultado.value,
@@ -2803,6 +2999,7 @@
       if(importOverlay.classList.contains("open")) importOverlay.classList.remove("open");
       if(notifOverlay.classList.contains("open")) notifOverlay.classList.remove("open");
       if(notifConfigOverlay.classList.contains("open")) notifConfigOverlay.classList.remove("open");
+      if(filtrosOverlay.classList.contains("open")) filtrosOverlay.classList.remove("open");
     }
   });
 
