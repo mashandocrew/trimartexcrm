@@ -1339,7 +1339,7 @@
   // pero puede consultarlos en solo lectura vía el toggle "Contactados".
   function leadsContactadosFlat(){
     return state.leads.filter(l =>
-      !l.archived && !l.recontacto_active && l.etapa === "contactado" && matchesSearch(l, state.search)
+      !l.archived && !l.recontacto_active && l.etapa === "contactado" && matchesSearch(l, state.search) && matchesFilters(l)
     );
   }
 
@@ -2492,13 +2492,24 @@
   const cfgCanalEmail = document.getElementById("cfg_canal_email");
   const cfgDiasSinSeguimiento = document.getElementById("cfg_dias_sin_seguimiento");
 
+  // canal_inapp=false: el usuario apagó las notificaciones dentro del CRM.
+  // No se borran (siguen existiendo para el email y para cuando las
+  // reactive), pero ni la campana ni la bandeja las muestran mientras tanto.
+  function canalInappActivo(){
+    return !state.preferencias || state.preferencias.canal_inapp !== false;
+  }
+
   function renderNotifBadge(){
-    const n = state.notificaciones.filter(x => !x.leida).length;
+    const n = canalInappActivo() ? state.notificaciones.filter(x => !x.leida).length : 0;
     notifBadge.style.display = n > 0 ? "inline-flex" : "none";
     notifBadge.textContent = n > 9 ? "9+" : String(n);
   }
 
   function renderNotifList(){
+    if(!canalInappActivo()){
+      notifList.innerHTML = `<div class="archive-empty">Tenés las notificaciones dentro del CRM desactivadas. Podés reactivarlas en el ícono de configuración (⚙).</div>`;
+      return;
+    }
     const list = state.notificaciones;
     notifList.innerHTML = list.length
       ? list.map(n => `
@@ -2578,6 +2589,7 @@
     const { data, error } = await supa.from("preferencias_notificacion").upsert(payload).select().single();
     if(error){ console.error(error); toast("No se pudo guardar la configuración"); return; }
     state.preferencias = data;
+    renderNotifBadge();
     toast("Preferencias guardadas");
     notifConfigOverlay.classList.remove("open");
   });
@@ -2798,7 +2810,7 @@
       data: {
         labels: keys.map(k => RUBROS[k]),
         datasets: [{
-          data: keys.map(k => porRubro[k] && porRubro[k].total ? Math.round((porRubro[k].cerrados / porRubro[k].total) * 100) : 0),
+          data: keys.map(k => porRubroPct(porRubro, k)),
           backgroundColor: keys.map((_, i) => SERIES_COLORS[i % SERIES_COLORS.length]),
           borderRadius: 4,
           maxBarThickness: 28,
@@ -2949,6 +2961,43 @@
     document.getElementById("sectionTristan").style.display = state.mode === "tristan" ? "block" : "none";
     buildReportGrid("leads_jp");
     if(state.mode === "tristan") buildReportGrid("gestion_tristan");
+  }
+
+  // Actualiza números y gráficos in-place (sin tocar GridStack) cuando llega
+  // un cambio de leads por realtime mientras el usuario ya está mirando la
+  // página de Reportes — si reconstruyéramos toda la grilla se perdería el
+  // drag/resize en curso y el estado de widgets ocultos.
+  function refreshReportWidgets(reporte){
+    if(!gridInstances[reporte]) return;
+    const metrics = computeReportMetrics(leadsParaReporte(reporte));
+    WIDGET_DEFS.forEach(def => {
+      const bodyEl = document.getElementById(`body_${reporte}_${def.id}`);
+      if(!bodyEl) return;
+      if(def.kind === "stat"){
+        bodyEl.innerHTML = widgetStatHtml(def, metrics);
+      } else if(def.kind === "bar_etapa"){
+        const chart = state.chartInstances[`chart_${reporte}_${def.id}`];
+        if(chart){ chart.data.datasets[0].data = COLUMNS.map(c => metrics.porEtapa[c.key] || 0); chart.update(); }
+      } else if(def.kind === "bar_rubro"){
+        const chart = state.chartInstances[`chart_${reporte}_${def.id}`];
+        if(chart){
+          const keys = Object.keys(RUBROS);
+          chart.data.datasets[0].data = keys.map(k => porRubroPct(metrics.porRubro, k));
+          chart.update();
+        }
+      }
+    });
+  }
+
+  function porRubroPct(porRubro, k){
+    const r = porRubro[k];
+    return r && r.total ? Math.round((r.cerrados / r.total) * 100) : 0;
+  }
+
+  function refreshReportesIfVisible(){
+    if(state.page !== "reportes") return;
+    refreshReportWidgets("leads_jp");
+    if(state.mode === "tristan") refreshReportWidgets("gestion_tristan");
   }
 
   /* ============ Cliente modal (Cartera) ============ */
@@ -3164,6 +3213,7 @@
     if(payload.eventType === "DELETE"){
       state.leads = state.leads.filter(l => l.id !== payload.old.id);
       render();
+      refreshReportesIfVisible();
       return;
     }
     const row = payload.new;
@@ -3171,30 +3221,35 @@
       // recién enviado a la papelera (o purgado) por la otra sesión
       state.leads = state.leads.filter(l => l.id !== row.id);
       render();
+      refreshReportesIfVisible();
       if(papeleraOverlay.classList.contains("open")) renderPapeleraList();
       return;
     }
     const idx = state.leads.findIndex(l => l.id === row.id);
     if(idx > -1) state.leads[idx] = row; else state.leads.push(row);
     render();
+    refreshReportesIfVisible();
   }
 
   function handlePrivadoRealtime(payload){
     if(payload.eventType === "DELETE"){
       state.privados = state.privados.filter(l => l.id !== payload.old.id);
       render();
+      refreshReportesIfVisible();
       return;
     }
     const row = payload.new;
     if(row.trashed_at){
       state.privados = state.privados.filter(l => l.id !== row.id);
       render();
+      refreshReportesIfVisible();
       if(papeleraOverlay.classList.contains("open")) renderPapeleraList();
       return;
     }
     const idx = state.privados.findIndex(l => l.id === row.id);
     if(idx > -1) state.privados[idx] = row; else state.privados.push(row);
     render();
+    refreshReportesIfVisible();
   }
 
   function handleHistoryRealtime(payload){
