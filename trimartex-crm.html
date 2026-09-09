@@ -558,6 +558,12 @@
     .search-wrap{ max-width:none; }
     header.topbar{ padding: 12px 14px; flex-wrap:wrap; row-gap:10px; }
     .field-row{ grid-template-columns:1fr; }
+    /* Con 6 páginas (pipeline/recontacto/cartera/contactados/reportes/actualizaciones)
+       el pill de navegación ya no entra en el ancho de un celular — que
+       scrollee horizontal en vez de desbordar o achicarse ilegible. */
+    .mode-toggle{ max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+    .mode-toggle::-webkit-scrollbar{ display:none; }
+    .mode-toggle button{ white-space:nowrap; }
   }
   @media (max-width: 520px){
     .brand-text{ display:none; }
@@ -636,6 +642,21 @@
     background: var(--surface-2); color:var(--text-dim); border:1px solid var(--border);
     flex:0 0 auto;
   }
+
+  /* ============ Actualizaciones (Etapa 5) ============ */
+  .actualizacion-row{
+    background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-md);
+    padding: 12px 14px; display:flex; flex-direction:column; gap:4px;
+  }
+  .actualizacion-main{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .actualizacion-main b{ font-size:13.5px; }
+  .actualizacion-tipo{
+    font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px; flex:0 0 auto;
+    background: var(--surface-2); color:var(--text-dim);
+  }
+  .actualizacion-tipo.tipo-novedad{ background: rgba(10,132,255,0.16); color:#7ad0ff; }
+  .actualizacion-texto{ font-size:12.5px; color:var(--text-dim); line-height:1.4; }
+  .actualizacion-fecha{ font-size:11px; color:var(--text-faint); }
 </style>
 </head>
 <body>
@@ -671,6 +692,7 @@
       <button data-page="cartera">Cartera<span class="pill-count" id="carteraCount" style="display:none;">0</span></button>
       <button data-page="contactados" id="contactadosToggleBtn" style="display:none;">Contactados<span class="pill-count" id="contactadosCount" style="display:none;">0</span></button>
       <button data-page="reportes" id="reportesToggleBtn">Reportes</button>
+      <button data-page="actualizaciones" id="actualizacionesToggleBtn">Actualizaciones</button>
     </div>
 
     <button class="privada-toggle" id="privadaToggleBtn" style="display:none;" title="Alternar Gestión Privada">
@@ -1182,6 +1204,7 @@
     recordatoriosCache: {}, // leadId (compartido o privado) -> recordatorios[]
     reporteLayouts: {},     // "leads_jp" | "gestion_tristan" -> { items:{widgetId:{x,y,w,h}}, hidden:[widgetId] }
     chartInstances: {},     // canvasId -> instancia Chart.js viva
+    actualizaciones: [],    // Etapa 5 — feed de lead_history + lead_novedades de los últimos 7 días
   };
 
   // Fuente de datos activa del pipeline/recontacto: la Gestión Privada de
@@ -1364,6 +1387,12 @@
       boardEl.style.display = "none";
       reportesWrapEl.style.display = "block";
       if(lastPage !== "reportes") renderReportesPage();
+    } else if(state.page === "actualizaciones"){
+      boardEl.style.display = "";
+      reportesWrapEl.style.display = "none";
+      mobileTabsEl.style.display = "none";
+      carteraFiltersEl.style.display = "none";
+      if(lastPage !== "actualizaciones") renderActualizacionesPage();
     } else if(state.page === "cartera"){
       boardEl.style.display = "";
       reportesWrapEl.style.display = "none";
@@ -1463,6 +1492,59 @@
     boardEl.querySelectorAll(".lead-card").forEach(card => {
       card.addEventListener("click", () => openLeadModal(card.dataset.id));
     });
+  }
+
+  // Etapa 5 — "Actualizaciones": feed de los últimos 7 días de lead_history
+  // (cambios de etapa/cierre/recontacto) + lead_novedades (bitácora de
+  // contacto), pensado para un vistazo rápido desde el celular. Solo cubre
+  // el pipeline compartido: la Gestión Privada de Tristán no tiene bitácora
+  // propia (decisión de la Etapa 1), así que no hay nada que mostrar de ahí.
+  async function loadActualizaciones(){
+    const desde = new Date(Date.now() - 7 * 86400000).toISOString();
+    const [histRes, novRes] = await Promise.all([
+      supa.from("lead_history").select("ts, label, leads(empresa)").gte("ts", desde).order("ts", { ascending: false }).limit(200),
+      supa.from("lead_novedades").select("contactado_at, mensaje, respuesta, leads(empresa)").gte("contactado_at", desde).order("contactado_at", { ascending: false }).limit(200),
+    ]);
+    if(histRes.error) console.error(histRes.error);
+    if(novRes.error) console.error(novRes.error);
+
+    const items = [];
+    (histRes.data || []).forEach(h => {
+      items.push({ ts: h.ts, empresa: (h.leads && h.leads.empresa) || "—", tipo: "historial", texto: h.label });
+    });
+    (novRes.data || []).forEach(n => {
+      const partes = [];
+      if(n.mensaje) partes.push("Mensaje: " + n.mensaje);
+      if(n.respuesta) partes.push("Respuesta: " + n.respuesta);
+      items.push({ ts: n.contactado_at, empresa: (n.leads && n.leads.empresa) || "—", tipo: "novedad", texto: partes.join(" · ") || "Novedad registrada" });
+    });
+    items.sort((a, b) => new Date(b.ts) - new Date(a.ts));
+    state.actualizaciones = items;
+  }
+
+  function renderActualizacionesBoard(){
+    const items = state.actualizaciones;
+    boardEl.innerHTML = `
+      <div class="cartera-list-wrap">
+        <div class="cartera-list">
+          ${items.length ? items.map(it => `
+            <article class="actualizacion-row">
+              <div class="actualizacion-main">
+                <b>${escapeHtml(it.empresa)}</b>
+                <span class="actualizacion-tipo ${it.tipo === "novedad" ? "tipo-novedad" : ""}">${it.tipo === "novedad" ? "Novedad" : "Pipeline"}</span>
+              </div>
+              <div class="actualizacion-texto">${escapeHtml(it.texto)}</div>
+              <div class="actualizacion-fecha">${formatDateTime(it.ts)}</div>
+            </article>
+          `).join("") : `<div class="cliente-empty">Sin actualizaciones en los últimos 7 días.</div>`}
+        </div>
+      </div>`;
+  }
+
+  async function renderActualizacionesPage(){
+    boardEl.innerHTML = `<div class="cartera-list-wrap"><div class="cliente-empty">Cargando…</div></div>`;
+    await loadActualizaciones();
+    renderActualizacionesBoard();
   }
 
   function renderMobileTabs(){
@@ -1764,7 +1846,7 @@
 
   function applyModeUI(){
     const isCartera = state.page === "cartera";
-    const isReportes = state.page === "reportes";
+    const isReportes = state.page === "reportes" || state.page === "actualizaciones";
     const isPrivate = state.privateMode;
     newLeadBtn.style.display = (!isCartera && (state.mode === "joaquin" || isPrivate) && state.page === "pipeline") ? "flex" : "none";
     archiveBtn.style.display = (!isCartera && !isReportes && (state.mode === "joaquin" || isPrivate)) ? "flex" : "none";
@@ -1789,7 +1871,7 @@
     const btn = e.target.closest("button[data-page]");
     if(!btn) return;
     if(btn.dataset.page === "contactados" && state.mode !== "tristan") return;
-    if(btn.dataset.page === "cartera" || btn.dataset.page === "contactados" || btn.dataset.page === "reportes") state.privateMode = false;
+    if(btn.dataset.page === "cartera" || btn.dataset.page === "contactados" || btn.dataset.page === "reportes" || btn.dataset.page === "actualizaciones") state.privateMode = false;
     state.page = btn.dataset.page;
     if(state.page === "pipeline" || state.page === "recontacto") state.activeMobileColumn = currentColumns()[0].key;
     render();
@@ -2824,7 +2906,13 @@
         : `<div class="widget-chart-canvas-wrap"><canvas id="chart_${reporte}_${def.id}"></canvas></div>`;
     });
 
-    const grid = GridStack.init({ cellHeight: 70, margin: 8, float: true, animate: true }, container);
+    // columnOpts: en pantallas angostas (celular) apila los widgets en una
+    // sola columna en vez de forzar la grilla de 12 columnas — GridStack no
+    // hace esto por defecto en v10, hay que declararlo.
+    const grid = GridStack.init({
+      cellHeight: 70, margin: 8, float: true, animate: true,
+      columnOpts: { breakpoints: [{ w: 700, c: 1 }] },
+    }, container);
     gridInstances[reporte] = grid;
 
     WIDGET_DEFS.forEach(def => {
