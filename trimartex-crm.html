@@ -356,9 +356,8 @@
   main.board-wrap{ flex: 1 1 auto; overflow: hidden; position:relative; }
   .board{
     height:100%;
-    display:grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(280px, 1fr);
+    display:flex;
+    flex-direction:row;
     gap: 14px;
     padding: 16px 16px 20px;
     overflow-x: auto;
@@ -367,11 +366,25 @@
   .column{
     display:flex;
     flex-direction:column;
+    flex: 0 0 var(--col-w, 300px);
     min-width:0;
+    position:relative;
     background: var(--bg-elevated);
     border: 1px solid var(--border-soft);
     border-radius: var(--radius-lg);
-    overflow:hidden;
+  }
+  .column-resize-handle{
+    /* Centrado sobre el gap de 14px entre columnas (más 2px hacia adentro) en
+       vez de sobre el borde exacto, para no pisar la scrollbar angosta de
+       .column-body al arrastrar. .column ya no recorta overflow (no hace
+       falta: ni column-head ni column-body pintan fondo propio salvo
+       drop-hover, que ya tiene su propio border-radius). */
+    position:absolute; top:0; right:-8px; width:10px; height:100%;
+    cursor:col-resize; z-index:3; background:transparent;
+  }
+  .column-resize-handle:hover, .column-resize-handle.resizing{
+    background: linear-gradient(to right, transparent, var(--accent) 50%, transparent);
+    opacity:.5;
   }
   .column-head{
     display:flex; align-items:center; gap:8px;
@@ -640,9 +653,10 @@
   #toast.show{ opacity:1; transform: translateX(-50%) translateY(0); }
 
   @media (max-width: 860px){
-    .board{ grid-auto-flow: row; grid-auto-columns: unset; display:block; padding: 12px 12px 20px; }
-    .column{ display:none; height:100%; border-radius: var(--radius-lg); }
+    .board{ display:block; padding: 12px 12px 20px; }
+    .column{ display:none; height:100%; border-radius: var(--radius-lg); flex-basis:auto; }
     .column.mobile-active{ display:flex; }
+    .column-resize-handle{ display:none; }
     .mobile-tabs{ display:flex; }
     .brand-text span{ display:none; }
     .search-wrap{ max-width:none; }
@@ -1336,6 +1350,20 @@
   const TAREAS_FILTRO_PRIORIDAD = [{key:"todas",label:"Todas"},{key:"alta",label:"Alta"},{key:"media",label:"Media"},{key:"baja",label:"Baja"}];
   const TAREAS_FILTRO_ASIGNADO = [{key:"todos",label:"Todos"},{key:"joaquin",label:"Joaquín"},{key:"tristan",label:"Tristán"},{key:"ambos",label:"Ambos"}];
   const TAREAS_TONOS = 5; // variación sutil de fondo entre post-its, sin relación con la prioridad
+  const COLUMN_WIDTH_DEFAULT = 300;
+  const COLUMN_WIDTH_MIN = 220;
+  const COLUMN_WIDTH_MAX = 640;
+
+  // Ancho de columna del pipeline/recontacto: preferencia puramente visual y
+  // por dispositivo, no un dato del negocio — se guarda en localStorage en vez
+  // de en Supabase (no hace falta sincronizarlo entre Joaquín y Tristán, ni
+  // entre el celular y la compu de la misma persona).
+  function loadColumnWidths(){
+    try{
+      const raw = localStorage.getItem("trimartex_col_widths");
+      return raw ? JSON.parse(raw) : {};
+    }catch(e){ return {}; }
+  }
 
   /* ============ App state ============ */
   const state = {
@@ -1352,6 +1380,7 @@
       modDesde: "", modHasta: "",         // yyyy-mm-dd, comparado contra updated_at
     },
     carteraFilter: "todos", // "todos" | "activo" | "inactivo"
+    columnWidths: loadColumnWidths(), // columnKey -> ancho en px (pipeline/recontacto)
     activeMobileColumn: null,
     editingId: null,
     editingClienteId: null,
@@ -1893,8 +1922,9 @@
       const leads = leadsForColumn(c.key);
       const activeClass = c.key === state.activeMobileColumn ? "mobile-active" : "";
       const emptyMsg = isRecontacto ? "Sin leads en recontacto acá." : `Sin leads acá${state.search ? " para esta búsqueda" : ""}.`;
+      const width = state.columnWidths[c.key] || COLUMN_WIDTH_DEFAULT;
       return `
-      <section class="column ${activeClass}" data-column="${c.key}">
+      <section class="column ${activeClass}" data-column="${c.key}" style="--col-w:${width}px">
         <div class="column-head">
           <span class="dot" style="background:${c.color}"></span>
           <span class="column-title">${escapeHtml(c.label)}</span>
@@ -1906,6 +1936,7 @@
         <div class="column-body" data-column="${c.key}">
           ${leads.length ? leads.map(l => cardHtml(l, isRecontacto)).join("") : `<div class="column-empty">${emptyMsg}</div>`}
         </div>
+        <div class="column-resize-handle" data-resize-column="${c.key}" title="Arrastrar para cambiar el ancho"></div>
       </section>`;
     }).join("");
 
@@ -1916,6 +1947,10 @@
       });
     });
 
+    boardEl.querySelectorAll(".column-resize-handle").forEach(handle => {
+      handle.addEventListener("mousedown", (e) => startColumnResize(e, handle.dataset.resizeColumn, handle.closest(".column")));
+    });
+
     boardEl.querySelectorAll(".lead-card").forEach(card => {
       card.addEventListener("click", (e) => {
         if(card._suppressClick) { card._suppressClick = false; return; }
@@ -1923,6 +1958,39 @@
       });
       attachDrag(card);
     });
+  }
+
+  // Redimensionar columnas del pipeline/recontacto arrastrando el borde
+  // derecho — el ancho se aplica en vivo vía la variable CSS --col-w y recién
+  // se persiste en localStorage al soltar, para no escribir en cada pixel.
+  let resizingColKey = null, resizingColEl = null, resizeStartX = 0, resizeStartWidth = 0;
+
+  function startColumnResize(e, key, el){
+    e.preventDefault();
+    resizingColKey = key;
+    resizingColEl = el;
+    resizeStartX = e.clientX;
+    resizeStartWidth = el.getBoundingClientRect().width;
+    document.addEventListener("mousemove", onColumnResizeMove);
+    document.addEventListener("mouseup", onColumnResizeEnd);
+  }
+
+  function onColumnResizeMove(e){
+    if(!resizingColEl) return;
+    const delta = e.clientX - resizeStartX;
+    const width = Math.min(COLUMN_WIDTH_MAX, Math.max(COLUMN_WIDTH_MIN, Math.round(resizeStartWidth + delta)));
+    state.columnWidths[resizingColKey] = width;
+    resizingColEl.style.setProperty("--col-w", width + "px");
+  }
+
+  function onColumnResizeEnd(){
+    if(resizingColKey){
+      try{ localStorage.setItem("trimartex_col_widths", JSON.stringify(state.columnWidths)); }catch(e){}
+    }
+    resizingColKey = null;
+    resizingColEl = null;
+    document.removeEventListener("mousemove", onColumnResizeMove);
+    document.removeEventListener("mouseup", onColumnResizeEnd);
   }
 
   function cierrePillHtml(lead){
