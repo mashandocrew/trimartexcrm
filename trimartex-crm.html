@@ -2673,11 +2673,14 @@
 
   // Leads en los que se basa cada reporte. "leads_jp" es el pipeline
   // compartido tal cual (ya visible para ambos roles vía RLS); el de Tristán
-  // suma su Gestión Privada completa más la porción del pipeline compartido
-  // que él gestiona (las mismas etapas de TRISTAN_VISIBLE).
+  // es exclusivamente su Gestión Privada (leads_privados_tristan) — no
+  // mezcla datos del pipeline compartido, aunque él gestione parte de esas
+  // etapas ahí (corregido a pedido del Sr.: antes sumaba también esas
+  // etapas del pipeline compartido, lo que mostraba en su reporte privado
+  // leads que no son de su Gestión Privada).
   function leadsParaReporte(reporte){
     if(reporte === "gestion_tristan"){
-      return [...state.privados, ...state.leads.filter(l => TRISTAN_VISIBLE.includes(l.etapa))];
+      return state.privados;
     }
     return state.leads;
   }
