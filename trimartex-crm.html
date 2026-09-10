@@ -638,19 +638,26 @@
   .filtro-chip.active{ background: var(--accent); border-color:var(--accent); color:#fff; }
 
   /* ============ Actualizaciones (Etapa 5) ============ */
+  .actualizaciones-day{
+    font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+    color: var(--text-faint); padding: 16px 2px 6px;
+  }
+  .actualizaciones-day:first-child{ padding-top:2px; }
   .actualizacion-row{
-    background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-md);
-    padding: 12px 14px; display:flex; flex-direction:column; gap:4px;
+    display:flex; align-items:flex-start; gap:10px;
+    padding: 8px 2px; border-bottom:1px solid var(--border-soft);
   }
-  .actualizacion-main{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
-  .actualizacion-main b{ font-size:13.5px; }
-  .actualizacion-tipo{
-    font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px; flex:0 0 auto;
-    background: var(--surface-2); color:var(--text-dim);
+  .actualizacion-row:last-child{ border-bottom:none; }
+  .actualizacion-dot{
+    width:6px; height:6px; border-radius:50%; margin-top:7px; flex:0 0 auto;
+    background: var(--text-faint);
   }
-  .actualizacion-tipo.tipo-novedad{ background: rgba(10,132,255,0.16); color:#7ad0ff; }
-  .actualizacion-texto{ font-size:12.5px; color:var(--text-dim); line-height:1.4; }
-  .actualizacion-fecha{ font-size:11px; color:var(--text-faint); }
+  .actualizacion-dot.tipo-novedad{ background:#7ad0ff; }
+  .actualizacion-body{ flex:1; min-width:0; }
+  .actualizacion-main{ display:flex; align-items:baseline; gap:8px; }
+  .actualizacion-main b{ font-size:13px; font-weight:600; color:var(--text); }
+  .actualizacion-hora{ font-size:11px; color:var(--text-faint); flex:0 0 auto; margin-left:auto; }
+  .actualizacion-texto{ font-size:12.5px; color:var(--text-dim); line-height:1.5; margin-top:1px; }
 </style>
 </head>
 <body>
@@ -1496,21 +1503,42 @@
     state.actualizaciones = items;
   }
 
+  function actualizacionDayLabel(iso){
+    const d = new Date(iso);
+    const hoy = new Date();
+    const ayer = new Date(hoy.getTime() - 86400000);
+    const mismodia = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    if(mismodia(d, hoy)) return "Hoy";
+    if(mismodia(d, ayer)) return "Ayer";
+    const dd = String(d.getDate()).padStart(2,"0");
+    const mm = String(d.getMonth()+1).padStart(2,"0");
+    return `${dd}/${mm}`;
+  }
+
   function renderActualizacionesBoard(){
     const items = state.actualizaciones;
+    let rows = "";
+    let dia = null;
+    items.forEach(it => {
+      const label = actualizacionDayLabel(it.ts);
+      if(label !== dia){ dia = label; rows += `<div class="actualizaciones-day">${dia}</div>`; }
+      const hora = formatDateTime(it.ts).split(" ")[1] || "";
+      rows += `
+        <article class="actualizacion-row">
+          <span class="actualizacion-dot ${it.tipo === "novedad" ? "tipo-novedad" : ""}"></span>
+          <div class="actualizacion-body">
+            <div class="actualizacion-main">
+              <b>${escapeHtml(it.empresa)}</b>
+              <span class="actualizacion-hora">${hora}</span>
+            </div>
+            <div class="actualizacion-texto">${escapeHtml(it.texto)}</div>
+          </div>
+        </article>`;
+    });
     boardEl.innerHTML = `
       <div class="cartera-list-wrap">
         <div class="cartera-list">
-          ${items.length ? items.map(it => `
-            <article class="actualizacion-row">
-              <div class="actualizacion-main">
-                <b>${escapeHtml(it.empresa)}</b>
-                <span class="actualizacion-tipo ${it.tipo === "novedad" ? "tipo-novedad" : ""}">${it.tipo === "novedad" ? "Novedad" : "Pipeline"}</span>
-              </div>
-              <div class="actualizacion-texto">${escapeHtml(it.texto)}</div>
-              <div class="actualizacion-fecha">${formatDateTime(it.ts)}</div>
-            </article>
-          `).join("") : `<div class="cliente-empty">Sin actualizaciones en los últimos 7 días.</div>`}
+          ${items.length ? rows : `<div class="cliente-empty">Sin actualizaciones en los últimos 7 días.</div>`}
         </div>
       </div>`;
   }
