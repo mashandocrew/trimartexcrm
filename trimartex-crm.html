@@ -3215,6 +3215,13 @@
   // solo puede ser una de estas 6 formas (grilla de 12 columnas); "editable
   // pero no tan editable" — se elige una forma con un click, no se estira a
   // mano un handle pixel por pixel.
+  // Se incrementa cada vez que cambia qué significa un layout guardado (acá:
+  // al pasar de tamaños libres a las 6 formas fijas). Un layout sin esta
+  // versión, o con una vieja, se trata como "de antes" y se reordena solo en
+  // vez de reusar sus x/y — evita el quilombo de mezclar posiciones viejas
+  // con anchos/altos nuevos (que es justo lo que dejaba widgets superpuestos).
+  const LAYOUT_VERSION = 2;
+
   const SHAPES = [
     { key:"sm",   label:"Chico",        w:3,  h:2 },
     { key:"tall", label:"Chico alto",   w:3,  h:4 },
@@ -3545,7 +3552,7 @@
       (Array.isArray(saved) ? saved : []).forEach(it => {
         if(it.id) items[it.id] = { x: it.x, y: it.y, w: it.w, h: it.h };
       });
-      const layout = { items, hidden: Array.from(hiddenSet) };
+      const layout = { items, hidden: Array.from(hiddenSet), version: LAYOUT_VERSION };
       state.reporteLayouts[reporte] = layout;
       const { error } = await supa.from("reporte_layout").upsert(
         { email: state.userRow.email, reporte, layout },
@@ -3635,21 +3642,36 @@
     const savedItems = saved.items || {};
     const hiddenSet = new Set(saved.hidden || []);
     hiddenSets[reporte] = hiddenSet;
+    // Un layout de la versión actual ya tiene x/y válidos para las 6 formas
+    // fijas (los calculó GridStack, sin superposiciones) — se reusan tal
+    // cual. Uno viejo (de tamaños libres) o inexistente no: mezclar esas
+    // posiciones con las formas nuevas es lo que dejaba widgets pisándose
+    // entre sí. En ese caso se ignoran x/y por completo y gs-auto-position
+    // hace que GridStack acomode cada widget solo, en orden, sin pisar a los
+    // que ya se ubicaron — y se persiste enseguida como la nueva base.
+    const isCurrent = saved.version === LAYOUT_VERSION;
 
     container.innerHTML = WIDGET_DEFS.map(def => {
       const defShape = SHAPES.find(s => s.key === def.shape) || SHAPES[0];
-      const pos = savedItems[def.id] || {};
+      const pos = isCurrent ? (savedItems[def.id] || {}) : {};
       // Layouts guardados antes de las 6 formas fijas: algunos widgets
       // quedaron sin "w" (GridStack no lo guarda si nunca se tocó ese eje) —
       // en ese caso cae en la forma default del widget, no en la más
       // chica por accidente de un Number.isFinite(undefined) === false.
       const w = Number.isFinite(pos.w) ? pos.w : defShape.w;
       const h = Number.isFinite(pos.h) ? pos.h : defShape.h;
-      const x = Number.isFinite(pos.x) ? pos.x : def.x;
-      const y = Number.isFinite(pos.y) ? pos.y : def.y;
       const shape = SHAPES[shapeIndexFor(w, h)];
+      // Los ocultos no deben competir por lugar con el auto-acomodo de los
+      // visibles (dejaría huecos donde "estuvo" un oculto) — se estacionan
+      // bien abajo, lejos de la zona compacta, hasta que se los remueva del
+      // grid (más abajo) o alguien los reactive desde el desplegable.
+      const posAttrs = !isCurrent && hiddenSet.has(def.id)
+        ? `gs-x="0" gs-y="100"`
+        : isCurrent
+          ? `gs-x="${Number.isFinite(pos.x) ? pos.x : def.x}" gs-y="${Number.isFinite(pos.y) ? pos.y : def.y}"`
+          : `gs-auto-position="true"`;
       return `
-      <div class="grid-stack-item" gs-id="${def.id}" gs-x="${x}" gs-y="${y}" gs-w="${shape.w}" gs-h="${shape.h}" gs-no-resize="true">
+      <div class="grid-stack-item" gs-id="${def.id}" ${posAttrs} gs-w="${shape.w}" gs-h="${shape.h}" gs-no-resize="true">
         <div class="grid-stack-item-content">
           <div class="widget-head">
             <span class="widget-title">${escapeHtml(def.title)}</span>
@@ -3697,6 +3719,12 @@
         if(el){ grid.removeWidget(el, false); el.style.display = "none"; }
       }
     });
+
+    // Layout viejo o inexistente: lo que GridStack acaba de auto-acomodar
+    // (gs-auto-position) recién ahora tiene x/y reales — se guarda de una
+    // con la versión actual para que la próxima vez sea el layout de
+    // confianza (isCurrent) y no se vuelva a reordenar solo.
+    if(!isCurrent) persistReportLayout(reporte, grid, hiddenSet);
 
     renderHiddenSelect(reporte);
 
