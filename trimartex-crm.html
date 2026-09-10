@@ -761,6 +761,7 @@
   }
   .filtro-chip:hover{ background:var(--surface-2); color:var(--text); }
   .filtro-chip.active{ background: var(--accent); border-color:var(--accent); color:#fff; }
+  .filtro-chip-empty{ font-size:12.5px; color:var(--text-dim); }
 
   /* ============ Actualizaciones (Etapa 5) ============ */
   .actualizaciones-day{
@@ -939,7 +940,7 @@
           </select>
         </div>
         <div class="field" id="f_ticket">
-          <label>Ticket estimado (ARS)</label>
+          <label id="ticketLabel">Ticket estimado</label>
           <input type="number" id="in_ticket" min="0" step="1000" placeholder="0">
         </div>
       </div>
@@ -1092,6 +1093,21 @@
           <input type="text" id="in_pedido_descripcion" placeholder="Ej: 20 cajas de servilletas">
         </div>
         <button type="button" class="btn btn-ghost btn-full" id="addPedidoBtn" style="margin-top:8px;">+ Cargar pedido</button>
+      </div>
+
+      <div class="field" id="cf_enviar_pipeline" style="display:none;">
+        <label>Enviar a pipeline</label>
+        <div class="field-row" id="enviarPipelineRow">
+          <div class="field" id="f_enviar_destino" style="margin-bottom:0;">
+            <label>Destino</label>
+            <select id="in_enviar_destino"></select>
+          </div>
+          <div class="field" style="margin-bottom:0;">
+            <label>Etapa</label>
+            <select id="in_enviar_etapa"></select>
+          </div>
+        </div>
+        <button type="button" class="btn btn-ghost btn-full" id="enviarPipelineBtn" style="margin-top:8px;">Enviar como lead</button>
       </div>
 
       <div class="delete-confirm" id="clienteDeleteConfirm">
@@ -1402,7 +1418,13 @@
     page: "pipeline",       // "pipeline" | "recontacto" | "cartera" | "contactados" | "tareas" | "reportes" | "actualizaciones"
     search: "",
     filtros: {              // Etapa 4 — filtros de cartera del pipeline, combinables en AND
-      rubros: [],           // subset de RUBROS keys, [] = todos
+      rubros: [],           // subset de RUBROS keys (enum fijo de 5), [] = todos — filtra leads
+      // Cartera de clientes usa texto libre para rubro (ver renderRubrosClienteDatalist),
+      // no el enum de 5 valores de los leads — necesita su propia lista de
+      // seleccionados (claves normalizadas vía normalizeRubroKey), separada de
+      // `rubros`, para poder filtrar por cualquier rubro real ("Cafetería",
+      // "Gimnasio", etc.) y no solo por los 5 fijos del pipeline.
+      rubrosCliente: [],
       creadoDesde: "", creadoHasta: "",   // yyyy-mm-dd, comparado contra created_at
       modDesde: "", modHasta: "",         // yyyy-mm-dd, comparado contra updated_at
     },
@@ -1537,20 +1559,20 @@
 
   function hayFiltrosActivos(){
     const f = state.filtros;
-    return f.rubros.length > 0 || !!f.creadoDesde || !!f.creadoHasta || !!f.modDesde || !!f.modHasta;
+    return f.rubros.length > 0 || f.rubrosCliente.length > 0 || !!f.creadoDesde || !!f.creadoHasta || !!f.modDesde || !!f.modHasta;
   }
 
   // Filtros en Cartera de clientes: mismas fechas que matchesFilters(), pero
   // el rubro de un cliente es texto libre (no el enum fijo de RUBROS que
-  // usan los leads), así que un chip de rubro matchea por substring en vez
-  // de por igualdad de clave — antes clientesFiltered() ignoraba state.filtros
-  // por completo y los filtros no tenían ningún efecto en esta página.
+  // usan los leads), así que usa su propia lista (rubrosCliente, claves
+  // normalizadas) y compara por igualdad exacta de clave normalizada, no por
+  // substring contra las 5 etiquetas de RUBROS — antes clientesFiltered()
+  // reusaba esas 5 etiquetas y un rubro real como "Cafetería" o "Gimnasio"
+  // nunca podía matchear ningún chip.
   function matchesFiltersCliente(c){
     const f = state.filtros;
-    if(f.rubros.length){
-      const texto = (c.rubro || "").toLowerCase();
-      const match = f.rubros.some(k => texto.includes(RUBROS[k].toLowerCase()) || texto.includes(k));
-      if(!match) return false;
+    if(f.rubrosCliente.length){
+      if(!f.rubrosCliente.includes(normalizeRubroKey(c.rubro || ""))) return false;
     }
     const creadoFecha = (c.created_at || "").slice(0, 10);
     const modFecha = (c.updated_at || "").slice(0, 10);
@@ -2218,13 +2240,28 @@
 
   // Selección en edición dentro del panel (borrador); recién se copia a
   // state.filtros al tocar "Aplicar", para no filtrar el board en vivo tecla
-  // a tecla ni con cada click de chip.
+  // a tecla ni con cada click de chip. El mismo borrador sirve para ambos
+  // contextos (leads o clientes) porque nunca están abiertos a la vez —
+  // filtroContexto() dice a cuál corresponde en cada momento.
   let filtroDraft = { rubros: [] };
 
+  // En Cartera el chip de Rubro filtra clientes (texto libre); en cualquier
+  // otra página filtra leads (enum fijo de 5). Son dos poblaciones de datos
+  // distintas, así que también son dos arrays distintos en state.filtros.
+  function filtroContexto(){
+    return state.page === "cartera" ? "cliente" : "lead";
+  }
+
   function renderFiltroChips(){
-    filtroRubroChips.innerHTML = Object.keys(RUBROS).map(k => `
-      <button type="button" class="filtro-chip ${filtroDraft.rubros.includes(k) ? "active" : ""}" data-rubro="${k}">${escapeHtml(RUBROS[k])}</button>
-    `).join("");
+    const esCliente = filtroContexto() === "cliente";
+    const opciones = esCliente
+      ? distinctClienteRubros()
+      : Object.keys(RUBROS).map(k => ({ key:k, label:RUBROS[k] }));
+    filtroRubroChips.innerHTML = opciones.length
+      ? opciones.map(o => `
+        <button type="button" class="filtro-chip ${filtroDraft.rubros.includes(o.key) ? "active" : ""}" data-rubro="${escapeHtml(o.key)}">${escapeHtml(o.label)}</button>
+      `).join("")
+      : `<span class="filtro-chip-empty">Todavía no hay rubros cargados</span>`;
     filtroRubroChips.querySelectorAll(".filtro-chip").forEach(chip => {
       chip.addEventListener("click", () => {
         const k = chip.dataset.rubro;
@@ -2237,7 +2274,8 @@
 
   function renderFiltrosBadge(){
     const f = state.filtros;
-    const n = f.rubros.length +
+    const rubrosActivos = filtroContexto() === "cliente" ? f.rubrosCliente.length : f.rubros.length;
+    const n = rubrosActivos +
       (f.creadoDesde ? 1 : 0) + (f.creadoHasta ? 1 : 0) + (f.modDesde ? 1 : 0) + (f.modHasta ? 1 : 0);
     filtrosBadge.style.display = n > 0 ? "inline-flex" : "none";
     filtrosBadge.textContent = n;
@@ -2245,7 +2283,8 @@
   }
 
   filtrosBtn.addEventListener("click", () => {
-    filtroDraft = { rubros: [...state.filtros.rubros] };
+    const activos = filtroContexto() === "cliente" ? state.filtros.rubrosCliente : state.filtros.rubros;
+    filtroDraft = { rubros: [...activos] };
     filtroCreadoDesde.value = state.filtros.creadoDesde;
     filtroCreadoHasta.value = state.filtros.creadoHasta;
     filtroModDesde.value = state.filtros.modDesde;
@@ -2257,15 +2296,22 @@
   filtrosOverlay.addEventListener("click", (e) => { if(e.target === filtrosOverlay) filtrosOverlay.classList.remove("open"); });
 
   document.getElementById("filtrosLimpiarBtn").addEventListener("click", () => {
-    state.filtros = { rubros: [], creadoDesde: "", creadoHasta: "", modDesde: "", modHasta: "" };
+    const esCliente = filtroContexto() === "cliente";
+    state.filtros = {
+      rubros: esCliente ? state.filtros.rubros : [],
+      rubrosCliente: esCliente ? [] : state.filtros.rubrosCliente,
+      creadoDesde: "", creadoHasta: "", modDesde: "", modHasta: "",
+    };
     renderFiltrosBadge();
     filtrosOverlay.classList.remove("open");
     render();
   });
 
   document.getElementById("filtrosAplicarBtn").addEventListener("click", () => {
+    const esCliente = filtroContexto() === "cliente";
     state.filtros = {
-      rubros: [...filtroDraft.rubros],
+      rubros: esCliente ? state.filtros.rubros : [...filtroDraft.rubros],
+      rubrosCliente: esCliente ? [...filtroDraft.rubros] : state.filtros.rubrosCliente,
       creadoDesde: filtroCreadoDesde.value || "",
       creadoHasta: filtroCreadoHasta.value || "",
       modDesde: filtroModDesde.value || "",
@@ -2302,6 +2348,7 @@
     // individuales — así que se oculta el botón ahí en vez de dejarlo
     // visible sin efecto.
     filtrosBtn.style.display = (isReportes || isTareas) ? "none" : "";
+    renderFiltrosBadge(); // el contexto (lead/cliente) depende de la página — se re-evalúa en cada render, no solo al aplicar/limpiar
     newLeadBtn.style.display = (!isCartera && (state.mode === "joaquin" || isPrivate) && state.page === "pipeline") ? "flex" : "none";
     archiveBtn.style.display = (!isCartera && !isReportes && !isTareas && (state.mode === "joaquin" || isPrivate)) ? "flex" : "none";
     papeleraBtn.style.display = (!isCartera && !isReportes && !isTareas && (state.mode === "joaquin" || isPrivate)) ? "flex" : "none";
@@ -2341,6 +2388,7 @@
   const modalFoot = document.getElementById("modalFoot");
   const clientNote = document.getElementById("clientNote");
   const deleteConfirm = document.getElementById("deleteConfirm");
+  const ticketLabel = document.getElementById("ticketLabel");
 
   const fields = {
     empresa: document.getElementById("in_empresa"),
@@ -2398,6 +2446,11 @@
     fields.telefono.value = lead ? lead.telefono : "";
     fields.rubro.value = lead ? lead.rubro : "seguridad";
     fields.ticket.value = lead && lead.ticket ? lead.ticket : "";
+    // En Pedido confirmado el monto ya no es una estimación — es lo que se
+    // vendió. "Ticket estimado" confundía en esa etapa (parece un ARS
+    // implícito, y el Sr. no quiere que se repita "($ARS)" en el label).
+    const etapaParaLabel = lead ? lead.etapa : newLeadEtapa;
+    ticketLabel.textContent = etapaParaLabel === "pedido_confirmado" ? "Monto de pedido" : "Ticket estimado";
     fields.fuente.value = lead ? lead.fuente : "";
     fields.fecha.value = lead ? (lead.fecha_contacto || "") : today();
     fields.resultado.value = lead ? lead.resultado : "sin_respuesta";
@@ -3612,6 +3665,98 @@
   const inPedidoDescripcion = document.getElementById("in_pedido_descripcion");
   const inPedidoMonto = document.getElementById("in_pedido_monto");
 
+  const enviarPipelineField = document.getElementById("cf_enviar_pipeline");
+  const enviarDestinoWrap = document.getElementById("f_enviar_destino");
+  const inEnviarDestino = document.getElementById("in_enviar_destino");
+  const inEnviarEtapa = document.getElementById("in_enviar_etapa");
+  const enviarPipelineBtn = document.getElementById("enviarPipelineBtn");
+
+  // Destinos donde el usuario actual puede crear leads a partir de un
+  // cliente de Cartera: coincide 1 a 1 con lo que permite el RLS (leads:
+  // cualquier usuario autorizado; leads_privados_tristan: solo Tristán), así
+  // que nunca se ofrece una opción que el insert vaya a rechazar.
+  function enviarPipelineDestinos(){
+    const destinos = [{ value:"leads", label:"Pipeline compartido" }];
+    if(state.mode === "tristan") destinos.push({ value:"leads_privados_tristan", label:"Gestión Privada" });
+    return destinos;
+  }
+
+  // Columnas válidas como etapa inicial para cada destino — las mismas que
+  // ya rigen el tablero (currentColumns()), para no ofrecer una etapa donde
+  // el lead recién creado no fuera a aparecerle a nadie.
+  function enviarPipelineEtapas(destino){
+    if(destino === "leads_privados_tristan") return COLUMNS.filter(c => c.key !== "leads_tristan");
+    return state.mode === "tristan" ? COLUMNS.filter(c => TRISTAN_VISIBLE.includes(c.key)) : COLUMNS;
+  }
+
+  function renderEnviarEtapaOptions(){
+    const etapas = enviarPipelineEtapas(inEnviarDestino.value);
+    const preferida = etapas.find(c => c.key === "nuevo") || etapas.find(c => c.key === "leads_tristan") || etapas[0];
+    inEnviarEtapa.innerHTML = etapas.map(c => `<option value="${c.key}">${escapeHtml(c.label)}</option>`).join("");
+    inEnviarEtapa.value = preferida.key;
+  }
+
+  function renderEnviarDestinoOptions(){
+    const destinos = enviarPipelineDestinos();
+    enviarDestinoWrap.style.display = destinos.length > 1 ? "block" : "none";
+    inEnviarDestino.innerHTML = destinos.map(d => `<option value="${d.value}">${escapeHtml(d.label)}</option>`).join("");
+    inEnviarDestino.value = "leads";
+    renderEnviarEtapaOptions();
+  }
+  inEnviarDestino.addEventListener("change", renderEnviarEtapaOptions);
+
+  // El rubro de Cartera es texto libre (ver renderRubrosClienteDatalist); el
+  // de los leads es un enum fijo de 5 valores. Si no matchea ninguno, el
+  // texto original no se pierde: queda igual en las notas del lead nuevo.
+  function mapRubroACliente(rubroTexto){
+    const k = normalizeRubroKey(rubroTexto || "");
+    if(!k) return "otro";
+    if(k.includes("segur")) return "seguridad";
+    if(k.includes("limp")) return "limpieza";
+    if(/(gastro|comida|restaur|resto|bar|cafe|bebida|cerveceria|bodega)/.test(k)) return "gastronomia";
+    if(/(club|deport|gimnas)/.test(k)) return "clubes";
+    if(k === "otro") return "otro";
+    return "otro";
+  }
+
+  async function enviarClienteAPipeline(c){
+    const destino = inEnviarDestino.value;
+    const etapaDestino = inEnviarEtapa.value;
+    const rubroMapeado = mapRubroACliente(c.rubro);
+    const rubroSinMatch = c.rubro && rubroMapeado === "otro" && normalizeRubroKey(c.rubro) !== "otro";
+    const notas = [
+      c.notas || "",
+      rubroSinMatch ? `Rubro (Cartera): ${c.rubro}` : "",
+    ].filter(Boolean).join("\n");
+
+    const payload = {
+      empresa: c.empresa,
+      contacto: c.contacto || "",
+      telefono: c.telefono || "",
+      rubro: rubroMapeado,
+      ticket: 0,
+      fuente: "Cartera de clientes",
+      fecha_contacto: today(),
+      resultado: "sin_respuesta",
+      notas,
+      etapa: etapaDestino,
+      clasificacion_abc: c.clasificacion_abc || null,
+      created_by: state.session.user.id,
+    };
+
+    const { error } = await supa.from(destino).insert(payload);
+    if(error){ console.error(error); toast("No se pudo enviar el cliente a pipeline"); return; }
+
+    const destinoLabel = enviarPipelineDestinos().find(d => d.value === destino).label;
+    const etapaLabel = (COLUMNS.find(col => col.key === etapaDestino) || {}).label || etapaDestino;
+    toast(`${c.empresa} enviado a ${destinoLabel} (${etapaLabel})`);
+  }
+
+  enviarPipelineBtn.addEventListener("click", () => {
+    const c = state.clientes.find(x => x.id === state.editingClienteId);
+    if(c) enviarClienteAPipeline(c);
+  });
+
   let clienteEstadoValue = "activo";
 
   const cinRubroList = document.getElementById("cin_rubro_list");
@@ -3626,8 +3771,13 @@
     return str.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   }
 
-  function renderRubrosClienteDatalist(){
-    if(!cinRubroList) return;
+  // Agrupa los rubros reales de la Cartera por clave normalizada (mayúsculas/
+  // tildes no cuentan como rubros distintos) y elige, de las variantes de
+  // escritura ya cargadas para cada uno, la más usada como forma canónica a
+  // mostrar. La usan tanto el autocompletado del campo Rubro como el filtro
+  // de Rubro de Cartera (Etapa 4) — antes ese filtro reusaba las 5 etiquetas
+  // fijas de los leads (RUBROS) y no reconocía ningún rubro real cargado acá.
+  function distinctClienteRubros(){
     const groups = new Map(); // key normalizado -> Map(texto original -> cantidad)
     state.clientes.forEach(c => {
       const raw = (c.rubro || "").trim();
@@ -3637,12 +3787,15 @@
       const variants = groups.get(key);
       variants.set(raw, (variants.get(raw) || 0) + 1);
     });
-    const sugeridos = Array.from(groups.values()).map(variants => {
-      // de las variantes de mayúsculas/tildes ya cargadas para este rubro,
-      // sugerimos la más usada (y a igualdad, la más corta) como forma canónica.
-      return Array.from(variants.entries()).sort((a, b) => b[1] - a[1] || a[0].length - b[0].length)[0][0];
-    }).sort((a, b) => a.localeCompare(b, "es"));
-    cinRubroList.innerHTML = sugeridos.map(r => `<option value="${escapeHtml(r)}">`).join("");
+    return Array.from(groups.entries()).map(([key, variants]) => {
+      const label = Array.from(variants.entries()).sort((a, b) => b[1] - a[1] || a[0].length - b[0].length)[0][0];
+      return { key, label };
+    }).sort((a, b) => a.label.localeCompare(b.label, "es"));
+  }
+
+  function renderRubrosClienteDatalist(){
+    if(!cinRubroList) return;
+    cinRubroList.innerHTML = distinctClienteRubros().map(r => `<option value="${escapeHtml(r.label)}">`).join("");
   }
 
   function renderClienteEstadoSeg(){
@@ -3689,8 +3842,11 @@
       pedidosField.style.display = "block";
       renderPedidosCliente();
       fetchPedidosCliente(c.id).then(renderPedidosCliente);
+      enviarPipelineField.style.display = "block";
+      renderEnviarDestinoOptions();
     } else {
       pedidosField.style.display = "none";
+      enviarPipelineField.style.display = "none";
     }
 
     clienteModalFoot.innerHTML = `
