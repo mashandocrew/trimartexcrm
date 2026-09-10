@@ -189,6 +189,15 @@
 
   .papelera-hint{ font-size:12.5px; color:var(--text-faint); margin:0 0 14px; }
 
+  .cfg-dias-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:7px 0; border-bottom:1px solid var(--border-soft); }
+  .cfg-dias-row:last-child{ border-bottom:none; }
+  .cfg-dias-row label{ font-size:13px; color:var(--text-dim); }
+  .cfg-dias-row input{
+    width:64px; flex:0 0 auto; text-align:center;
+    background: var(--surface); border:1px solid var(--border); border-radius:8px;
+    color:var(--text); font-size:13px; padding:6px 4px;
+  }
+
   .auth-screen{
     position: fixed; inset:0; z-index: 200; background: var(--bg);
     display:flex; align-items:center; justify-content:center; padding:20px;
@@ -1043,10 +1052,10 @@
         <label><input type="checkbox" id="cfg_canal_email"> Notificaciones por email</label>
       </div>
       <div class="field">
-        <label>Avisar cuando un lead no tiene movimientos hace (días)</label>
-        <input type="number" id="cfg_dias_sin_seguimiento" min="1" max="30" step="1">
+        <label>Avisar cuando un lead no tiene movimientos hace (días), por etapa</label>
+        <div id="cfgDiasPorEtapa"></div>
       </div>
-      <p class="papelera-hint">Estas alertas ("seguimiento vencido", "sin novedades") son individuales: cada usuario configura su propio umbral y canales. Las de la Gestión Privada de Tristán son 100% privadas.</p>
+      <p class="papelera-hint">Estas alertas ("seguimiento vencido", "sin novedades") son individuales: cada usuario configura su propio umbral y canales. El umbral de días es distinto en cada etapa — el de Recontacto sigue su propio calendario semanal, aparte de esto. Las de la Gestión Privada de Tristán son 100% privadas.</p>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" id="notifConfigCancelBtn">Cerrar</button>
@@ -2547,7 +2556,25 @@
   const notifConfigOverlay = document.getElementById("notifConfigOverlay");
   const cfgCanalInapp = document.getElementById("cfg_canal_inapp");
   const cfgCanalEmail = document.getElementById("cfg_canal_email");
-  const cfgDiasSinSeguimiento = document.getElementById("cfg_dias_sin_seguimiento");
+  const cfgDiasPorEtapa = document.getElementById("cfgDiasPorEtapa");
+
+  // Valores de partida si preferencias.dias_por_etapa todavía no trae una
+  // etapa (usuario nuevo, o etapa agregada después) — nunca se usan para
+  // sobrescribir lo que el usuario ya haya guardado.
+  const DIAS_ETAPA_DEFAULT = {
+    leads_tristan: 2, nuevo: 2, contactado: 3, cotizacion_pendiente: 3,
+    cotizacion_enviada: 5, seguimiento: 5, cerrado: 14,
+  };
+
+  function renderCfgDiasPorEtapa(valores){
+    cfgDiasPorEtapa.innerHTML = COLUMNS.map(c => `
+      <div class="cfg-dias-row">
+        <label for="cfg_dias_${c.key}">${escapeHtml(c.label)}</label>
+        <input type="number" id="cfg_dias_${c.key}" min="1" max="60" step="1"
+               value="${(valores && valores[c.key]) || DIAS_ETAPA_DEFAULT[c.key]}">
+      </div>
+    `).join("");
+  }
 
   // canal_inapp=false: el usuario apagó las notificaciones dentro del CRM.
   // No se borran (siguen existiendo para el email y para cuando las
@@ -2626,10 +2653,10 @@
   });
 
   notifConfigBtn.addEventListener("click", () => {
-    const p = state.preferencias || { canal_inapp: true, canal_email: true, dias_sin_seguimiento: 3 };
+    const p = state.preferencias || { canal_inapp: true, canal_email: true, dias_por_etapa: DIAS_ETAPA_DEFAULT };
     cfgCanalInapp.checked = p.canal_inapp;
     cfgCanalEmail.checked = p.canal_email;
-    cfgDiasSinSeguimiento.value = p.dias_sin_seguimiento;
+    renderCfgDiasPorEtapa(p.dias_por_etapa);
     notifConfigOverlay.classList.add("open");
   });
   document.getElementById("notifConfigCloseBtn").addEventListener("click", () => notifConfigOverlay.classList.remove("open"));
@@ -2637,11 +2664,16 @@
   notifConfigOverlay.addEventListener("click", (e) => { if(e.target === notifConfigOverlay) notifConfigOverlay.classList.remove("open"); });
 
   document.getElementById("notifConfigSaveBtn").addEventListener("click", async () => {
+    const dias_por_etapa = {};
+    COLUMNS.forEach(c => {
+      const el = document.getElementById(`cfg_dias_${c.key}`);
+      dias_por_etapa[c.key] = Math.min(60, Math.max(1, Number(el.value) || DIAS_ETAPA_DEFAULT[c.key]));
+    });
     const payload = {
       email: state.userRow.email,
       canal_inapp: cfgCanalInapp.checked,
       canal_email: cfgCanalEmail.checked,
-      dias_sin_seguimiento: Math.min(30, Math.max(1, Number(cfgDiasSinSeguimiento.value) || 3)),
+      dias_por_etapa,
     };
     const { data, error } = await supa.from("preferencias_notificacion").upsert(payload).select().single();
     if(error){ console.error(error); toast("No se pudo guardar la configuración"); return; }
@@ -3399,7 +3431,7 @@
       .eq("email", email)
       .maybeSingle();
     if(error){ console.error(error); return; }
-    state.preferencias = data || { email, canal_inapp: true, canal_email: true, dias_sin_seguimiento: 3 };
+    state.preferencias = data || { email, canal_inapp: true, canal_email: true, dias_por_etapa: DIAS_ETAPA_DEFAULT };
   }
 
   async function fetchHistory(leadId){
