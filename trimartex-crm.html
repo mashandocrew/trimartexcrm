@@ -311,6 +311,14 @@
     min-width:22px; height:20px; padding:0 6px; border-radius:999px;
     display:flex; align-items:center; justify-content:center;
   }
+  .column-add-btn{
+    flex:0 0 auto; width:22px; height:22px; border-radius:50%;
+    border:1px solid var(--border); background: var(--surface); color: var(--text-dim);
+    display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0;
+    transition: background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .column-add-btn svg{ width:13px; height:13px; }
+  .column-add-btn:hover{ background: var(--accent); color:#fff; border-color: var(--accent); }
   .column-body{
     flex:1 1 auto; overflow-y:auto; padding: 4px 10px 14px;
     display:flex; flex-direction:column; gap:10px;
@@ -1611,6 +1619,11 @@
   function renderBoard(){
     const cols = currentColumns();
     const isRecontacto = state.page === "recontacto";
+    // Mismo permiso que ya regía al botón "Nuevo lead" del header (Joaquín
+    // en el pipeline compartido, o cualquiera dentro de su propia Gestión
+    // Privada) — acá se repite por columna para poder cargar un lead
+    // directo en la etapa que corresponde, sin arrastrarlo después.
+    const canCreateHere = !isRecontacto && (state.mode === "joaquin" || state.privateMode);
     boardEl.innerHTML = cols.map(c => {
       const leads = leadsForColumn(c.key);
       const activeClass = c.key === state.activeMobileColumn ? "mobile-active" : "";
@@ -1621,12 +1634,22 @@
           <span class="dot" style="background:${c.color}"></span>
           <span class="column-title">${escapeHtml(c.label)}</span>
           <span class="column-count">${leads.length}</span>
+          ${canCreateHere ? `<button type="button" class="column-add-btn" data-add-column="${c.key}" title="Nuevo lead en ${escapeHtml(c.label)}">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </button>` : ""}
         </div>
         <div class="column-body" data-column="${c.key}">
           ${leads.length ? leads.map(l => cardHtml(l, isRecontacto)).join("") : `<div class="column-empty">${emptyMsg}</div>`}
         </div>
       </section>`;
     }).join("");
+
+    boardEl.querySelectorAll(".column-add-btn").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openLeadModal(null, btn.dataset.addColumn);
+      });
+    });
 
     boardEl.querySelectorAll(".lead-card").forEach(card => {
       card.addEventListener("click", (e) => {
@@ -1940,8 +1963,14 @@
     notas: document.getElementById("f_notas"),
   };
 
-  async function openLeadModal(id){
+  // Etapa en la que se crea el próximo lead nuevo — la fija el botón "+" de
+  // la columna que se haya tocado (o "nuevo" por defecto, vía el botón
+  // "Nuevo lead" del header).
+  let newLeadEtapa = "nuevo";
+
+  async function openLeadModal(id, targetEtapa){
     state.editingId = id || null;
+    newLeadEtapa = targetEtapa || "nuevo";
     deleteConfirm.classList.remove("show");
     // En su Gestión Privada, Tristán tiene edición completa (es dueño de esos
     // leads) — el modo restringido de "cliente" solo aplica al pipeline
@@ -1954,7 +1983,9 @@
     // suya. Tristán solo puede consultarlos (vía el toggle "Contactados").
     const isContactadoLocked = isClientMode && !isNew && !!lead && lead.etapa === "contactado";
 
-    modalTitle.textContent = isNew ? "Nuevo lead" : (isClientMode ? "Detalle del lead" : "Editar lead");
+    modalTitle.textContent = isNew
+      ? (newLeadEtapa === "nuevo" ? "Nuevo lead" : `Nuevo lead — ${(COLUMNS.find(c => c.key === newLeadEtapa) || {}).label || ""}`)
+      : (isClientMode ? "Detalle del lead" : "Editar lead");
     clientNote.style.display = (isClientMode && !isNew) ? "flex" : "none";
     document.getElementById("clientNoteText").innerHTML = isContactadoLocked
       ? "Este lead todavía está en la etapa <b>Contactado</b>, a cargo de Joaquín. Solo podés consultarlo, no editarlo."
@@ -2290,7 +2321,7 @@
         fecha_contacto: fields.fecha.value || null,
         resultado: fields.resultado.value,
         notas: fields.notas.value.trim(),
-        etapa: "nuevo",
+        etapa: newLeadEtapa,
         archived: false,
         cierre: null,
         recontacto_active: false,
