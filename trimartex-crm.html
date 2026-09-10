@@ -260,8 +260,13 @@
     border-bottom: 1px solid var(--border-soft);
   }
   .cartera-filters::-webkit-scrollbar{ display:none; }
-  .cartera-list-wrap{ height:100%; overflow-y:auto; padding: 16px; }
-  .cartera-list{ max-width:900px; margin:0 auto; display:flex; flex-direction:column; gap:10px; }
+  /* .board es flex-row (para las columnas del pipeline); sin flex:1 acá, este
+     wrap de una sola columna se encogía a lo ancho de su contenido en vez de
+     ocupar el espacio disponible, dejando casi toda la pantalla en blanco a
+     la derecha en desktop. width:100% en .cartera-list es lo que deja que
+     max-width + margin:auto centren la lista de verdad. */
+  .cartera-list-wrap{ height:100%; width:100%; flex:1 1 auto; overflow-y:auto; padding: 16px; }
+  .cartera-list{ max-width:900px; width:100%; margin:0 auto; display:flex; flex-direction:column; gap:10px; }
   .cliente-card{
     background: var(--surface);
     border: 1px solid var(--border);
