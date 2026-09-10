@@ -685,6 +685,9 @@
     .mode-toggle{ max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
     .mode-toggle::-webkit-scrollbar{ display:none; }
     .mode-toggle button{ white-space:nowrap; }
+    .reporte-section-head{ flex-wrap:wrap; }
+    .reporte-section-controls{ width:100%; justify-content:space-between; }
+    .reporte-hidden-select{ max-width:none; flex:1 1 auto; }
   }
   @media (max-width: 520px){
     .brand-text{ display:none; }
@@ -713,8 +716,18 @@
   }
   .reportes-wrap{ padding: 16px 20px 40px; overflow-y:auto; height:100%; box-sizing:border-box; }
   .reporte-section{ margin-bottom: 28px; }
+  .reporte-section-head{
+    display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px;
+  }
   .reporte-section-title{ font-size:15px; font-weight:700; margin: 0 0 4px; }
-  .reporte-section-sub{ font-size:12.5px; color:var(--text-faint); margin: 0 0 12px; }
+  .reporte-section-sub{ font-size:12.5px; color:var(--text-faint); margin: 0; }
+  .reporte-section-controls{ display:flex; align-items:center; gap:8px; flex:0 0 auto; }
+  .reporte-hidden-select{
+    background: var(--surface); border:1px solid var(--border); color:var(--text-dim);
+    border-radius:10px; padding:7px 30px 7px 12px; font-size:12.5px; cursor:pointer; max-width:180px;
+  }
+  .reporte-edit-btn{ padding:7px 14px; font-size:12.5px; white-space:nowrap; }
+  .reporte-edit-btn.active{ background: var(--accent); color:#fff; }
   .grid-stack{ background: transparent; }
   .grid-stack-item-content{
     background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg);
@@ -722,15 +735,26 @@
   }
   .widget-head{
     display:flex; align-items:center; gap:8px; padding: 10px 12px;
-    border-bottom:1px solid var(--border-soft); flex:0 0 auto; cursor:grab;
+    border-bottom:1px solid var(--border-soft); flex:0 0 auto; cursor:default;
   }
-  .widget-head:active{ cursor:grabbing; }
+  /* El drag de GridStack (handle:'.widget-head') solo hace algo en modo
+     edición (grid.setStatic() lo desactiva fuera de eso) — este cursor es
+     puramente el indicio visual de que ahora sí se puede arrastrar. Antes
+     todo el cuerpo del widget era zona de arrastre (sin `handle` en
+     GridStack.init), lo que en celular hacía casi imposible scrollear sin
+     mover una caja por accidente.  */
+  .reporte-section.editing .widget-head{ cursor:grab; }
+  .reporte-section.editing .widget-head:active{ cursor:grabbing; }
   .widget-title{ font-size:12.5px; font-weight:700; color:var(--text-dim); flex:1 1 auto; }
-  .widget-hide-btn{
-    width:22px; height:22px; border-radius:6px; border:none; background:transparent;
+  .widget-controls{ display:none; align-items:center; gap:2px; flex:0 0 auto; }
+  .reporte-section.editing .widget-controls{ display:flex; }
+  .widget-hide-btn, .widget-shape-btn{
+    height:22px; border-radius:6px; border:none; background:transparent;
     color:var(--text-faint); display:flex; align-items:center; justify-content:center; cursor:pointer;
   }
-  .widget-hide-btn:hover{ background: var(--surface-2); color:var(--text); }
+  .widget-hide-btn{ width:22px; }
+  .widget-shape-btn{ width:auto; padding:0 6px; font-size:10.5px; font-weight:700; letter-spacing:.02em; }
+  .widget-hide-btn:hover, .widget-shape-btn:hover{ background: var(--surface-2); color:var(--text); }
   .widget-hide-btn svg{ width:14px; height:14px; }
   .widget-body{ flex:1 1 auto; min-height:0; padding: 10px 14px; display:flex; flex-direction:column; }
   .widget-body.widget-body-chart{ padding: 6px 10px 10px; }
@@ -747,15 +771,6 @@
   .ranking-name{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text); }
   .ranking-value{ flex:0 0 auto; font-weight:700; color:var(--text-dim); }
   .ranking-empty{ color:var(--text-faint); font-size:12.5px; padding:10px 0; }
-  .hidden-widgets-bar{
-    display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top: 6px;
-  }
-  .hidden-widget-chip{
-    display:inline-flex; align-items:center; gap:6px; background:var(--surface);
-    border:1px dashed var(--border); border-radius:999px; padding:6px 12px;
-    font-size:12px; color:var(--text-dim); cursor:pointer;
-  }
-  .hidden-widget-chip:hover{ background:var(--surface-2); color:var(--text); }
 
   /* ============ Filtros de cartera (Etapa 4) ============ */
   .filtro-chips{ display:flex; flex-wrap:wrap; gap:8px; }
@@ -886,17 +901,31 @@
   <main class="board-wrap">
     <div class="board" id="board"></div>
     <div class="reportes-wrap" id="reportesWrap" style="display:none;">
-      <div class="reporte-section">
-        <h2 class="reporte-section-title">Leads JP</h2>
-        <p class="reporte-section-sub">Desempeño del pipeline compartido. Arrastrá, redimensioná u ocultá cada widget — se guarda por usuario.</p>
+      <div class="reporte-section" id="sectionJP">
+        <div class="reporte-section-head">
+          <div>
+            <h2 class="reporte-section-title">Leads JP</h2>
+            <p class="reporte-section-sub">Desempeño del pipeline compartido. Tocá "Editar" para mover, cambiar de tamaño u ocultar widgets.</p>
+          </div>
+          <div class="reporte-section-controls">
+            <select class="reporte-hidden-select" id="hiddenSelectJP"><option value="">+ Mostrar widget…</option></select>
+            <button type="button" class="btn btn-ghost reporte-edit-btn" id="editBtnJP">Editar</button>
+          </div>
+        </div>
         <div class="grid-stack" id="gridJP"></div>
-        <div class="hidden-widgets-bar" id="hiddenBarJP"></div>
       </div>
       <div class="reporte-section" id="sectionTristan" style="display:none;">
-        <h2 class="reporte-section-title">Gestión Comercial Tristán</h2>
-        <p class="reporte-section-sub">Incluye tu Gestión Privada y los leads compartidos que gestionás. Solo vos lo ves.</p>
+        <div class="reporte-section-head">
+          <div>
+            <h2 class="reporte-section-title">Gestión Comercial Tristán</h2>
+            <p class="reporte-section-sub">Incluye tu Gestión Privada y los leads compartidos que gestionás. Solo vos lo ves. Tocá "Editar" para mover, cambiar de tamaño u ocultar widgets.</p>
+          </div>
+          <div class="reporte-section-controls">
+            <select class="reporte-hidden-select" id="hiddenSelectTristan"><option value="">+ Mostrar widget…</option></select>
+            <button type="button" class="btn btn-ghost reporte-edit-btn" id="editBtnTristan">Editar</button>
+          </div>
+        </div>
         <div class="grid-stack" id="gridTristan"></div>
-        <div class="hidden-widgets-bar" id="hiddenBarTristan"></div>
       </div>
     </div>
   </main>
@@ -3182,25 +3211,62 @@
   // mismo reporte (mismos widgets) sobre datasets distintos, así que comparten
   // esta definición. Posiciones/tamaños acá son solo el default inicial —
   // cada usuario los reacomoda y eso se persiste en reporte_layout.
+  // Como los widgets de Apple: tamaños fijos, no resize libre. Cada widget
+  // solo puede ser una de estas 6 formas (grilla de 12 columnas); "editable
+  // pero no tan editable" — se elige una forma con un click, no se estira a
+  // mano un handle pixel por pixel.
+  const SHAPES = [
+    { key:"sm",   label:"Chico",        w:3,  h:2 },
+    { key:"tall", label:"Chico alto",   w:3,  h:4 },
+    { key:"md",   label:"Mediano",      w:6,  h:3 },
+    { key:"lg",   label:"Grande",       w:6,  h:5 },
+    { key:"xl",   label:"Extra grande", w:9,  h:5 },
+    { key:"full", label:"Completo",     w:12, h:6 },
+  ];
+  function shapeIndexFor(w, h){
+    const exact = SHAPES.findIndex(s => s.w === w && s.h === h);
+    if(exact > -1) return exact;
+    // Layout heredado de antes de las 6 formas fijas — cae en la más cercana
+    // (distancia Manhattan en w+h). A igualdad de distancia se prefiere la
+    // forma más grande (más área, y a igualdad de área la más ancha): un
+    // gráfico de barras que empataba entre "Chico alto" y "Grande" se ve
+    // mucho mejor en la más ancha de las dos.
+    let best = 0, bestDiff = Infinity, bestArea = -1, bestW = -1;
+    SHAPES.forEach((s, i) => {
+      const diff = Math.abs(s.w - w) + Math.abs(s.h - h);
+      const area = s.w * s.h;
+      if(diff < bestDiff || (diff === bestDiff && (area > bestArea || (area === bestArea && s.w > bestW)))){
+        best = i; bestDiff = diff; bestArea = area; bestW = s.w;
+      }
+    });
+    return best;
+  }
+
+  // "Leads JP" (Joaquín) y "Gestión Comercial Tristán" son estructuralmente el
+  // mismo reporte (mismos widgets) sobre datasets distintos, así que comparten
+  // esta definición. Posiciones/forma acá son solo el default inicial — cada
+  // usuario los reacomoda y eso se persiste en reporte_layout.
   const WIDGET_DEFS = [
-    { id:"ventas",       title:"Ventas (ganado)",         kind:"stat",      x:0, y:0, w:3, h:2 },
-    { id:"avance",       title:"Avance",                  kind:"stat",      x:3, y:0, w:3, h:2 },
-    { id:"crecimiento",  title:"Crecimiento",             kind:"stat",      x:6, y:0, w:3, h:2 },
-    { id:"tasa_cierre",  title:"Tasa de cierre",          kind:"stat",      x:9, y:0, w:3, h:2 },
-    { id:"antiguedad",   title:"Antigüedad promedio",     kind:"stat",      x:0, y:2, w:3, h:2 },
-    { id:"por_etapa",    title:"Leads por etapa",         kind:"bar_etapa", x:3, y:2, w:5, h:4 },
-    { id:"por_rubro",    title:"Conversión por rubro",    kind:"bar_rubro", x:8, y:2, w:4, h:4 },
-    { id:"bajas",              title:"Bajas",                    kind:"stat",           x:0, y:6, w:3, h:2 },
-    { id:"pedido_grande",      title:"Pedido más grande",       kind:"stat",           x:3, y:6, w:3, h:2 },
-    { id:"por_rubro_ventas",   title:"Rubros con más ventas",   kind:"bar_rubro_ventas", x:6, y:6, w:6, h:4 },
-    { id:"top_clientes",       title:"Top clientes",            kind:"ranking",        x:0, y:8, w:3, h:4 },
-    { id:"clientes_frecuentes",title:"Clientes más frecuentes", kind:"ranking",        x:3, y:8, w:3, h:4 },
+    { id:"ventas",       title:"Ventas (ganado)",         kind:"stat",      x:0, y:0, shape:"sm" },
+    { id:"avance",       title:"Avance",                  kind:"stat",      x:3, y:0, shape:"sm" },
+    { id:"crecimiento",  title:"Crecimiento",             kind:"stat",      x:6, y:0, shape:"sm" },
+    { id:"tasa_cierre",  title:"Tasa de cierre",          kind:"stat",      x:9, y:0, shape:"sm" },
+    { id:"antiguedad",   title:"Antigüedad promedio",     kind:"stat",      x:0, y:2, shape:"sm" },
+    { id:"por_etapa",    title:"Leads por etapa",         kind:"bar_etapa", x:3, y:2, shape:"lg" },
+    { id:"por_rubro",    title:"Conversión por rubro",    kind:"bar_rubro", x:9, y:2, shape:"lg" },
+    { id:"bajas",              title:"Bajas",                    kind:"stat",           x:0, y:4, shape:"sm" },
+    { id:"pedido_grande",      title:"Pedido más grande",       kind:"stat",           x:3, y:4, shape:"sm" },
+    { id:"por_rubro_ventas",   title:"Rubros con más ventas",   kind:"bar_rubro_ventas", x:6, y:7, shape:"lg" },
+    { id:"top_clientes",       title:"Top clientes",            kind:"ranking",        x:0, y:6, shape:"tall" },
+    { id:"clientes_frecuentes",title:"Clientes más frecuentes", kind:"ranking",        x:3, y:6, shape:"tall" },
   ];
 
   const REPORTE_CONFIG = {
-    leads_jp:         { gridId: "gridJP",      hiddenBarId: "hiddenBarJP" },
-    gestion_tristan:  { gridId: "gridTristan", hiddenBarId: "hiddenBarTristan" },
+    leads_jp:         { gridId: "gridJP",      sectionId: "sectionJP",      hiddenSelectId: "hiddenSelectJP",      editBtnId: "editBtnJP" },
+    gestion_tristan:  { gridId: "gridTristan", sectionId: "sectionTristan", hiddenSelectId: "hiddenSelectTristan", editBtnId: "editBtnTristan" },
   };
+
+  const reportesEditMode = {}; // reporte -> bool, no persiste (arranca siempre en modo vista)
 
   const gridInstances = {};   // reporte -> instancia GridStack
   const persistTimers = {};   // reporte -> timeout id (debounce de guardado)
@@ -3489,28 +3555,70 @@
     }, 400);
   }
 
-  function renderHiddenBar(reporte, hiddenSet){
+  const hiddenSets = {}; // reporte -> Set<widgetId> — referenciado tanto por el
+                          // botón de ocultar (dentro del grid, se recrea en
+                          // cada buildReportGrid) como por el <select> de
+                          // "Mostrar widget" (fuera del grid, cableado una sola vez).
+
+  // El desplegable de "Mostrar widget" vive fuera del grid (no se recrea en
+  // cada buildReportGrid), así que se cablea una sola vez acá; lee siempre
+  // el hiddenSet vigente a través de hiddenSets[reporte].
+  function renderHiddenSelect(reporte){
     const cfg = REPORTE_CONFIG[reporte];
-    const bar = document.getElementById(cfg.hiddenBarId);
-    if(!bar) return;
+    const sel = document.getElementById(cfg.hiddenSelectId);
+    if(!sel) return;
+    const hiddenSet = hiddenSets[reporte] || new Set();
     const hiddenDefs = WIDGET_DEFS.filter(d => hiddenSet.has(d.id));
-    bar.innerHTML = hiddenDefs.map(d => `<button type="button" class="hidden-widget-chip" data-widget="${d.id}">+ ${escapeHtml(d.title)}</button>`).join("");
-    bar.querySelectorAll(".hidden-widget-chip").forEach(chip => {
-      chip.addEventListener("click", () => {
-        const id = chip.dataset.widget;
-        const grid = gridInstances[reporte];
-        const gridEl = document.getElementById(cfg.gridId);
-        const el = gridEl && gridEl.querySelector(`[gs-id="${id}"]`);
-        if(!grid || !el) return;
-        const def = WIDGET_DEFS.find(d => d.id === id);
-        el.style.display = "";
-        grid.addWidget(el, { x: def.x, y: def.y, w: def.w, h: def.h });
-        hiddenSet.delete(id);
-        renderHiddenBar(reporte, hiddenSet);
-        persistReportLayout(reporte, grid, hiddenSet);
-      });
-    });
+    sel.innerHTML = `<option value="">+ Mostrar widget…</option>` +
+      hiddenDefs.map(d => `<option value="${d.id}">${escapeHtml(d.title)}</option>`).join("");
+    sel.disabled = !hiddenDefs.length;
   }
+
+  function agregarWidgetOculto(reporte, id){
+    const cfg = REPORTE_CONFIG[reporte];
+    const grid = gridInstances[reporte];
+    const gridEl = document.getElementById(cfg.gridId);
+    const el = gridEl && gridEl.querySelector(`[gs-id="${id}"]`);
+    const hiddenSet = hiddenSets[reporte];
+    if(!grid || !el || !hiddenSet) return;
+    const def = WIDGET_DEFS.find(d => d.id === id);
+    const shape = SHAPES.find(s => s.key === def.shape) || SHAPES[0];
+    el.style.display = "";
+    grid.addWidget(el, { x: def.x, y: def.y, w: shape.w, h: shape.h });
+    hiddenSet.delete(id);
+    renderHiddenSelect(reporte);
+    persistReportLayout(reporte, grid, hiddenSet);
+  }
+
+  // Modo edición por reporte — no persiste entre sesiones, siempre arranca
+  // en modo vista (como el "jiggle mode" de Apple: hay que activarlo a
+  // propósito antes de poder mover/ocultar nada). grid.setStatic() es lo que
+  // realmente desactiva el drag; en modo vista, tocar un widget para
+  // scrollear en celular no arrastra nada.
+  function setEditMode(reporte, editing){
+    reportesEditMode[reporte] = editing;
+    const cfg = REPORTE_CONFIG[reporte];
+    const section = document.getElementById(cfg.sectionId);
+    const btn = document.getElementById(cfg.editBtnId);
+    const grid = gridInstances[reporte];
+    if(section) section.classList.toggle("editing", editing);
+    if(btn){ btn.textContent = editing ? "Listo" : "Editar"; btn.classList.toggle("active", editing); }
+    if(grid) grid.setStatic(!editing);
+  }
+
+  // Cableado único de los controles fuera del grid (botón Editar y select de
+  // widgets ocultos) — a diferencia de los botones de ocultar/cambiar forma,
+  // estos elementos no se recrean en cada buildReportGrid.
+  Object.keys(REPORTE_CONFIG).forEach(reporte => {
+    const cfg = REPORTE_CONFIG[reporte];
+    const editBtn = document.getElementById(cfg.editBtnId);
+    if(editBtn) editBtn.addEventListener("click", () => setEditMode(reporte, !reportesEditMode[reporte]));
+    const sel = document.getElementById(cfg.hiddenSelectId);
+    if(sel) sel.addEventListener("change", () => {
+      if(sel.value) agregarWidgetOculto(reporte, sel.value);
+      sel.value = "";
+    });
+  });
 
   function buildReportGrid(reporte){
     const cfg = REPORTE_CONFIG[reporte];
@@ -3526,17 +3634,31 @@
     const saved = state.reporteLayouts[reporte] || {};
     const savedItems = saved.items || {};
     const hiddenSet = new Set(saved.hidden || []);
+    hiddenSets[reporte] = hiddenSet;
 
     container.innerHTML = WIDGET_DEFS.map(def => {
-      const pos = savedItems[def.id] || def;
+      const defShape = SHAPES.find(s => s.key === def.shape) || SHAPES[0];
+      const pos = savedItems[def.id] || {};
+      // Layouts guardados antes de las 6 formas fijas: algunos widgets
+      // quedaron sin "w" (GridStack no lo guarda si nunca se tocó ese eje) —
+      // en ese caso cae en la forma default del widget, no en la más
+      // chica por accidente de un Number.isFinite(undefined) === false.
+      const w = Number.isFinite(pos.w) ? pos.w : defShape.w;
+      const h = Number.isFinite(pos.h) ? pos.h : defShape.h;
+      const x = Number.isFinite(pos.x) ? pos.x : def.x;
+      const y = Number.isFinite(pos.y) ? pos.y : def.y;
+      const shape = SHAPES[shapeIndexFor(w, h)];
       return `
-      <div class="grid-stack-item" gs-id="${def.id}" gs-x="${pos.x}" gs-y="${pos.y}" gs-w="${pos.w}" gs-h="${pos.h}">
+      <div class="grid-stack-item" gs-id="${def.id}" gs-x="${x}" gs-y="${y}" gs-w="${shape.w}" gs-h="${shape.h}" gs-no-resize="true">
         <div class="grid-stack-item-content">
           <div class="widget-head">
             <span class="widget-title">${escapeHtml(def.title)}</span>
-            <button type="button" class="widget-hide-btn" data-widget="${def.id}" title="Ocultar widget">
-              <svg viewBox="0 0 24 24" fill="none"><path d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.4 9.4 0 0112 5c5 0 9 4 10 7-.4 1.1-1.2 2.4-2.3 3.6M6.7 6.7C4.6 8 3.1 10 2 12c1 3 5 7 10 7 1.4 0 2.7-.3 3.9-.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
+            <div class="widget-controls">
+              <button type="button" class="widget-shape-btn" data-widget="${def.id}" title="Cambiar tamaño">${escapeHtml(shape.label)}</button>
+              <button type="button" class="widget-hide-btn" data-widget="${def.id}" title="Ocultar widget">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.1A9.4 9.4 0 0112 5c5 0 9 4 10 7-.4 1.1-1.2 2.4-2.3 3.6M6.7 6.7C4.6 8 3.1 10 2 12c1 3 5 7 10 7 1.4 0 2.7-.3 3.9-.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
           </div>
           <div class="widget-body ${def.kind !== "stat" && def.kind !== "ranking" ? "widget-body-chart" : ""}" id="body_${reporte}_${def.id}"></div>
         </div>
@@ -3553,12 +3675,21 @@
 
     // columnOpts: en pantallas angostas (celular) apila los widgets en una
     // sola columna en vez de forzar la grilla de 12 columnas — GridStack no
-    // hace esto por defecto en v10, hay que declararlo.
+    // hace esto por defecto en v10, hay que declararlo. handle restringe el
+    // arrastre a la cabecera (antes cualquier parte del widget arrastraba, lo
+    // que en celular hacía casi imposible scrollear sin mover una caja).
+    // disableResize: el tamaño ya no se estira a mano, se elige entre las 6
+    // formas fijas con el botón de la cabecera. staticGrid arranca en true
+    // (modo vista) salvo que ya se hubiera activado Editar antes en esta
+    // misma sesión.
     const grid = GridStack.init({
       cellHeight: 70, margin: 8, float: true, animate: true,
+      handle: ".widget-head", disableResize: true,
+      staticGrid: !reportesEditMode[reporte],
       columnOpts: { breakpoints: [{ w: 700, c: 1 }] },
     }, container);
     gridInstances[reporte] = grid;
+    setEditMode(reporte, !!reportesEditMode[reporte]);
 
     WIDGET_DEFS.forEach(def => {
       if(hiddenSet.has(def.id)){
@@ -3567,17 +3698,33 @@
       }
     });
 
-    renderHiddenBar(reporte, hiddenSet);
+    renderHiddenSelect(reporte);
 
     container.querySelectorAll(".widget-hide-btn").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
+        if(!reportesEditMode[reporte]) return;
         const id = btn.dataset.widget;
         const el = btn.closest(".grid-stack-item");
         grid.removeWidget(el, false);
         el.style.display = "none";
         hiddenSet.add(id);
-        renderHiddenBar(reporte, hiddenSet);
+        renderHiddenSelect(reporte);
+        persistReportLayout(reporte, grid, hiddenSet);
+      });
+    });
+
+    container.querySelectorAll(".widget-shape-btn").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if(!reportesEditMode[reporte]) return;
+        const el = btn.closest(".grid-stack-item");
+        const node = el.gridstackNode || {};
+        const w = node.w || parseInt(el.getAttribute("gs-w"), 10);
+        const h = node.h || parseInt(el.getAttribute("gs-h"), 10);
+        const next = SHAPES[(shapeIndexFor(w, h) + 1) % SHAPES.length];
+        grid.update(el, { w: next.w, h: next.h });
+        btn.textContent = next.label;
         persistReportLayout(reporte, grid, hiddenSet);
       });
     });
