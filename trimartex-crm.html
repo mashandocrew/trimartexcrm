@@ -1628,11 +1628,13 @@
   function renderBoard(){
     const cols = currentColumns();
     const isRecontacto = state.page === "recontacto";
-    // Mismo permiso que ya regía al botón "Nuevo lead" del header (Joaquín
-    // en el pipeline compartido, o cualquiera dentro de su propia Gestión
-    // Privada) — acá se repite por columna para poder cargar un lead
-    // directo en la etapa que corresponde, sin arrastrarlo después.
-    const canCreateHere = !isRecontacto && (state.mode === "joaquin" || state.privateMode);
+    // A pedido del Sr.: Tristán también carga leads directo por columna en
+    // sus dos pipelines (el compartido, donde antes solo podía editar
+    // resultado/notas/fecha de leads existentes, y su Gestión Privada).
+    // currentColumns() ya deja ver solo las columnas que corresponden a
+    // cada rol, así que alcanza con no mostrarlo en Recontacto (etapas, no
+    // destinos de creación).
+    const canCreateHere = !isRecontacto;
     boardEl.innerHTML = cols.map(c => {
       const leads = leadsForColumn(c.key);
       const activeClass = c.key === state.activeMobileColumn ? "mobile-active" : "";
@@ -2011,10 +2013,13 @@
     fields.notas.value = lead ? lead.notas : "";
     fieldWraps.empresa.classList.remove("invalid");
 
+    // El modo restringido de "cliente" (solo Resultado/Notas/Fecha editables)
+    // rige exclusivamente al editar un lead ya existente — al crear uno
+    // nuevo, Tristán completa el formulario igual que Joaquín.
     const clientEditable = ["resultado", "notas", "fecha"];
     Object.keys(fields).forEach(key => {
       const lockedForClient = isClientMode && !isNew && (isContactadoLocked || !clientEditable.includes(key));
-      fields[key].disabled = lockedForClient || (isClientMode && isNew);
+      fields[key].disabled = lockedForClient;
     });
 
     renderRecontactoBlock(lead, isClientMode);
@@ -2041,10 +2046,13 @@
       recordatoriosField.style.display = "none";
     }
 
-    // Foot buttons
+    // Foot buttons. El pie restringido de "cliente" (Cerrar / Guardar
+    // cambios) es solo para editar un lead existente — al crear uno nuevo
+    // se usa siempre el pie completo (Cancelar / Crear lead), aunque quien
+    // esté creando sea Tristán en modo cliente.
     let footHtml = "";
-    if(isClientMode){
-      if(!isNew && !isContactadoLocked){
+    if(isClientMode && !isNew){
+      if(!isContactadoLocked){
         footHtml = `<button class="btn btn-ghost" id="cancelBtn">Cerrar</button>
                     <button class="btn btn-accent btn-full" id="saveBtn">Guardar cambios</button>`;
       } else {
