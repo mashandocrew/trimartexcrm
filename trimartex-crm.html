@@ -729,13 +729,39 @@
   .reporte-edit-btn{ padding:7px 14px; font-size:12.5px; white-space:nowrap; }
   .reporte-edit-btn.active{ background: var(--accent); color:#fff; }
   .grid-stack{ background: transparent; }
+  /* Estética "widget de macOS": tarjeta de vidrio esmerilado (vibrancy) bien
+     redondeada y flotando con sombra, en vez de la tarjeta plana con borde
+     duro que se usa en el resto de la app — por eso son valores propios acá
+     y no los --surface/--border compartidos (tocar esos afectaría leads,
+     modales, etc. en toda la app). */
   .grid-stack-item-content{
-    background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg);
+    background:
+      linear-gradient(165deg, rgba(255,255,255,0.07), rgba(255,255,255,0) 45%),
+      rgba(30,30,34,0.72);
+    backdrop-filter: blur(28px) saturate(150%);
+    -webkit-backdrop-filter: blur(28px) saturate(150%);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 22px;
+    box-shadow: 0 16px 32px -12px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.25);
     display:flex; flex-direction:column; overflow:hidden; inset: 4px !important;
   }
+  /* El "jiggle" de los widgets de iOS/macOS en modo edición — confirma con
+     el cuerpo, no solo con el botón "Editar", que ahora sí se puede tocar
+     algo. Se anima .grid-stack-item-content (no el .grid-stack-item que
+     posiciona GridStack) para no pisarle el left/top/width/height propios. */
+  @keyframes widgetJiggle{
+    0%, 100%{ transform: rotate(-0.55deg); }
+    50%{ transform: rotate(0.55deg); }
+  }
+  .reporte-section.editing .grid-stack-item-content{
+    animation: widgetJiggle 0.26s ease-in-out infinite;
+  }
+  .reporte-section.editing .grid-stack-item:nth-child(even) .grid-stack-item-content{
+    animation-delay: -0.13s;
+  }
   .widget-head{
-    display:flex; align-items:center; gap:8px; padding: 10px 12px;
-    border-bottom:1px solid var(--border-soft); flex:0 0 auto; cursor:default;
+    display:flex; align-items:center; gap:8px; padding: 12px 14px 4px;
+    flex:0 0 auto; cursor:default;
   }
   /* El drag de GridStack (handle:'.widget-head') solo hace algo en modo
      edición (grid.setStatic() lo desactiva fuera de eso) — este cursor es
@@ -745,20 +771,23 @@
      mover una caja por accidente.  */
   .reporte-section.editing .widget-head{ cursor:grab; }
   .reporte-section.editing .widget-head:active{ cursor:grabbing; }
-  .widget-title{ font-size:12.5px; font-weight:700; color:var(--text-dim); flex:1 1 auto; }
-  .widget-controls{ display:none; align-items:center; gap:2px; flex:0 0 auto; }
+  .widget-title{
+    font-size:10.5px; font-weight:700; color:var(--text-faint); flex:1 1 auto;
+    text-transform:uppercase; letter-spacing:.06em;
+  }
+  .widget-controls{ display:none; align-items:center; gap:4px; flex:0 0 auto; }
   .reporte-section.editing .widget-controls{ display:flex; }
   .widget-hide-btn, .widget-shape-btn{
-    height:22px; border-radius:6px; border:none; background:transparent;
-    color:var(--text-faint); display:flex; align-items:center; justify-content:center; cursor:pointer;
+    height:22px; border-radius:999px; border:none; background:rgba(255,255,255,0.08);
+    color:var(--text-dim); display:flex; align-items:center; justify-content:center; cursor:pointer;
   }
   .widget-hide-btn{ width:22px; }
-  .widget-shape-btn{ width:auto; padding:0 6px; font-size:10.5px; font-weight:700; letter-spacing:.02em; }
-  .widget-hide-btn:hover, .widget-shape-btn:hover{ background: var(--surface-2); color:var(--text); }
-  .widget-hide-btn svg{ width:14px; height:14px; }
-  .widget-body{ flex:1 1 auto; min-height:0; padding: 10px 14px; display:flex; flex-direction:column; }
-  .widget-body.widget-body-chart{ padding: 6px 10px 10px; }
-  .widget-stat-value{ font-size: clamp(20px, 4vw, 30px); font-weight:800; line-height:1.1; }
+  .widget-shape-btn{ width:auto; padding:0 8px; font-size:10px; font-weight:700; letter-spacing:.02em; }
+  .widget-hide-btn:hover, .widget-shape-btn:hover{ background: rgba(255,255,255,0.16); color:var(--text); }
+  .widget-hide-btn svg{ width:13px; height:13px; }
+  .widget-body{ flex:1 1 auto; min-height:0; padding: 4px 14px 12px; display:flex; flex-direction:column; }
+  .widget-body.widget-body-chart{ padding: 2px 10px 10px; }
+  .widget-stat-value{ font-size: clamp(20px, 4vw, 30px); font-weight:800; letter-spacing:-0.02em; line-height:1.1; }
   .widget-stat-delta{ font-size:12px; font-weight:700; margin-top:4px; }
   .widget-stat-delta.up{ color: var(--status-good); }
   .widget-stat-delta.down{ color: var(--status-critical); }
