@@ -1270,13 +1270,25 @@
 
   function toWhatsappLink(phone){
     if(!phone) return null;
-    let digits = phone.replace(/\D/g,"");
-    if(!digits) return null;
+    const raw = String(phone).trim();
+    if(!raw) return null;
+    // Tokenizamos por separadores (espacios/guiones) para poder distinguir
+    // el prefijo de larga distancia ("0") y el prefijo de celular local ("15")
+    // de los dígitos reales del número, en vez de concatenar todo a ciegas.
+    let tokens = raw.split(/\D+/).filter(Boolean);
+    if(!tokens.length) return null;
+    let digits = tokens.join("");
     if(digits.startsWith("54")){
+      // Ya viene en formato internacional (54 9 ...): solo normalizamos el "9".
       if(!digits.startsWith("549")) digits = "549" + digits.slice(2);
-    } else {
-      digits = "549" + digits;
+      return "https://wa.me/" + digits;
     }
+    // Formato local argentino coloquial, ej: "0261 15-555-1234".
+    // Sacamos el "0" de larga distancia del código de área...
+    tokens[0] = tokens[0].replace(/^0+/, "");
+    // ...y el "15" de celular local, que si no se quita arma un número inválido.
+    tokens = tokens.filter(t => t !== "15");
+    digits = "549" + tokens.join("");
     return "https://wa.me/" + digits;
   }
 
