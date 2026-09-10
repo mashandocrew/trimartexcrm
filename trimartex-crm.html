@@ -957,13 +957,24 @@
       </div>
 
       <div class="field">
-        <label>Nota de último pedido</label>
-        <textarea id="cin_ultimo_pedido" placeholder="Qué pidió la última vez..."></textarea>
-      </div>
-
-      <div class="field">
         <label>Notas</label>
         <textarea id="cin_notas" placeholder="Observaciones..."></textarea>
+      </div>
+
+      <div class="field" id="cf_pedidos" style="display:none;">
+        <label>Pedidos</label>
+        <div class="history-list" id="pedidosList"></div>
+        <div class="field-row" style="margin-top:8px;">
+          <div class="field" style="margin-bottom:0;">
+            <label>Fecha</label>
+            <input type="date" id="in_pedido_fecha">
+          </div>
+          <div class="field" style="margin-bottom:0;">
+            <label>Qué pidió</label>
+            <input type="text" id="in_pedido_descripcion" placeholder="Ej: 20 cajas de servilletas">
+          </div>
+        </div>
+        <button type="button" class="btn btn-ghost btn-full" id="addPedidoBtn" style="margin-top:8px;">+ Cargar pedido</button>
       </div>
 
       <div class="delete-confirm" id="clienteDeleteConfirm">
@@ -1217,6 +1228,8 @@
     notificaciones: [],     // bandeja propia (RLS ya filtra por destinatario)
     preferencias: null,     // fila propia de preferencias_notificacion
     recordatoriosCache: {}, // leadId (compartido o privado) -> recordatorios[]
+    pedidosCache: {},       // clienteId -> pedidos_cliente[] (historial completo, cargado al abrir el modal)
+    pedidosUltimo: {},      // clienteId -> pedido más reciente (preview en la card de Cartera)
     reporteLayouts: {},     // "leads_jp" | "gestion_tristan" -> { items:{widgetId:{x,y,w,h}}, hidden:[widgetId] }
     chartInstances: {},     // canvasId -> instancia Chart.js viva
     actualizaciones: [],    // Etapa 5 — feed de lead_history + lead_novedades de los últimos 7 días
@@ -1493,9 +1506,10 @@
   function clienteCardHtml(c){
     const wa = toWhatsappLink(c.telefono);
     const sub = [c.contacto, c.rubro].filter(Boolean).join(" · ");
+    const ultimoPedido = state.pedidosUltimo[c.id];
     const meta = [
       c.ultimo_contacto_at ? `Último contacto: ${formatDate(c.ultimo_contacto_at)}` : "",
-      c.ultimo_pedido_nota ? `Último pedido: ${c.ultimo_pedido_nota}` : "",
+      ultimoPedido ? `Último pedido: ${ultimoPedido.descripcion}` : "",
     ].filter(Boolean).join(" · ");
     return `
     <article class="cliente-card" data-id="${c.id}">
@@ -3132,9 +3146,13 @@
     telefono: document.getElementById("cin_telefono"),
     rubro: document.getElementById("cin_rubro"),
     ultimoContacto: document.getElementById("cin_ultimo_contacto"),
-    ultimoPedido: document.getElementById("cin_ultimo_pedido"),
     notas: document.getElementById("cin_notas"),
   };
+
+  const pedidosField = document.getElementById("cf_pedidos");
+  const pedidosList = document.getElementById("pedidosList");
+  const inPedidoFecha = document.getElementById("in_pedido_fecha");
+  const inPedidoDescripcion = document.getElementById("in_pedido_descripcion");
 
   let clienteEstadoValue = "activo";
 
@@ -3199,11 +3217,22 @@
     cFields.telefono.value = c ? c.telefono : "";
     cFields.rubro.value = c ? (c.rubro || "") : "";
     cFields.ultimoContacto.value = c ? (c.ultimo_contacto_at || "") : "";
-    cFields.ultimoPedido.value = c ? (c.ultimo_pedido_nota || "") : "";
     cFields.notas.value = c ? c.notas : "";
     cfEmpresa.classList.remove("invalid");
     clienteEstadoValue = c ? c.estado : "activo";
     renderClienteEstadoSeg();
+
+    // Los pedidos son un historial, así que recién tienen sentido una vez que
+    // el cliente existe (igual que los Recordatorios en el modal de leads).
+    inPedidoFecha.value = today();
+    inPedidoDescripcion.value = "";
+    if(!isNew && c){
+      pedidosField.style.display = "block";
+      renderPedidosCliente();
+      fetchPedidosCliente(c.id).then(renderPedidosCliente);
+    } else {
+      pedidosField.style.display = "none";
+    }
 
     clienteModalFoot.innerHTML = `
       ${!isNew ? `<button class="btn btn-danger" id="clienteDeleteBtn">Eliminar</button>` : ""}
@@ -3240,7 +3269,6 @@
       rubro: cFields.rubro.value.trim() || null,
       estado: clienteEstadoValue,
       ultimo_contacto_at: cFields.ultimoContacto.value || null,
-      ultimo_pedido_nota: cFields.ultimoPedido.value.trim(),
       notas: cFields.notas.value.trim(),
     };
 
@@ -3281,6 +3309,81 @@
 
   document.getElementById("clienteModalCloseBtn").addEventListener("click", closeClienteModal);
   clienteOverlay.addEventListener("click", (e) => { if(e.target === clienteOverlay) closeClienteModal(); });
+
+  /* ============ Pedidos (historial por cliente, Cartera) ============ */
+  async function fetchPedidosCliente(clienteId){
+    const { data, error } = await supa
+      .from("pedidos_cliente")
+      .select("*")
+      .eq("cliente_id", clienteId)
+      .order("fecha", { ascending: false })
+      .order("created_at", { ascending: false });
+    if(error){ console.error(error); return []; }
+    state.pedidosCache[clienteId] = data || [];
+    return data;
+  }
+
+  function renderPedidosCliente(){
+    const clienteId = state.editingClienteId;
+    const rows = clienteId ? (state.pedidosCache[clienteId] || []) : [];
+    pedidosList.innerHTML = rows.length
+      ? rows.map(p => `
+        <div class="history-row" data-id="${p.id}">
+          <span class="h-label">${escapeHtml(p.descripcion)}</span>
+          <span class="h-date">${formatDate(p.fecha)}</span>
+          <button type="button" class="modal-close eliminar-pedido-btn" data-id="${p.id}" title="Eliminar" style="width:20px;height:20px;align-self:center;flex:0 0 auto;"><svg viewBox="0 0 24 24" fill="none"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        </div>
+      `).join("")
+      : `<div class="history-empty">Sin pedidos registrados.</div>`;
+    pedidosList.querySelectorAll(".eliminar-pedido-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.id;
+        const { error } = await supa.from("pedidos_cliente").delete().eq("id", id);
+        if(error){ console.error(error); toast("No se pudo eliminar el pedido"); return; }
+        if(clienteId) state.pedidosCache[clienteId] = (state.pedidosCache[clienteId] || []).filter(p => p.id !== id);
+        renderPedidosCliente();
+        await refreshUltimoPedido(clienteId);
+        if(state.page === "cartera") render();
+        toast("Pedido eliminado");
+      });
+    });
+  }
+
+  async function refreshUltimoPedido(clienteId){
+    const { data, error } = await supa
+      .from("pedidos_cliente")
+      .select("fecha, descripcion")
+      .eq("cliente_id", clienteId)
+      .order("fecha", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if(error){ console.error(error); return; }
+    if(data) state.pedidosUltimo[clienteId] = data; else delete state.pedidosUltimo[clienteId];
+  }
+
+  document.getElementById("addPedidoBtn").addEventListener("click", async () => {
+    const clienteId = state.editingClienteId;
+    if(!clienteId) return;
+    if(!inPedidoDescripcion.value.trim()){ toast("Escribí qué pidió"); return; }
+    const payload = {
+      cliente_id: clienteId,
+      fecha: inPedidoFecha.value || today(),
+      descripcion: inPedidoDescripcion.value.trim(),
+      created_by: state.session.user.id,
+    };
+    const { data, error } = await supa.from("pedidos_cliente").insert(payload).select().single();
+    if(error){ console.error(error); toast("No se pudo cargar el pedido"); return; }
+    if(!state.pedidosCache[clienteId]) state.pedidosCache[clienteId] = [];
+    state.pedidosCache[clienteId].unshift(data);
+    state.pedidosCache[clienteId].sort((a, b) => new Date(b.fecha) - new Date(a.fecha) || new Date(b.created_at) - new Date(a.created_at));
+    inPedidoFecha.value = today();
+    inPedidoDescripcion.value = "";
+    renderPedidosCliente();
+    await refreshUltimoPedido(clienteId);
+    if(state.page === "cartera") render();
+    toast("Pedido cargado");
+  });
 
   /* ============ Keyboard ============ */
   document.addEventListener("keydown", (e) => {
@@ -3325,6 +3428,7 @@
       .on("postgres_changes", { event: "*", schema: "public", table: "clientes" }, handleClienteRealtime)
       .on("postgres_changes", { event: "*", schema: "public", table: "notificaciones" }, handleNotifRealtime)
       .on("postgres_changes", { event: "*", schema: "public", table: "recordatorios" }, handleRecordatorioRealtime)
+      .on("postgres_changes", { event: "*", schema: "public", table: "pedidos_cliente" }, handlePedidoRealtime)
       .subscribe();
   }
 
@@ -3347,6 +3451,13 @@
       || (payload.old && (payload.old.lead_id || payload.old.lead_privado_id));
     if(!leadKey || state.editingId !== leadKey) return;
     fetchRecordatorios(leadKey).then(renderRecordatorios);
+  }
+
+  function handlePedidoRealtime(payload){
+    const clienteId = (payload.new && payload.new.cliente_id) || (payload.old && payload.old.cliente_id);
+    if(!clienteId) return;
+    if(state.editingClienteId === clienteId) fetchPedidosCliente(clienteId).then(renderPedidosCliente);
+    refreshUltimoPedido(clienteId).then(() => { if(state.page === "cartera") render(); });
   }
 
   function handleClienteRealtime(payload){
@@ -3464,6 +3575,21 @@
     state.clientes = data || [];
   }
 
+  // Preview de "último pedido" en la card de Cartera: trae de una sola vez el
+  // pedido más reciente de cada cliente (no todo el historial, que se carga
+  // recién al abrir el modal de un cliente puntual).
+  async function loadUltimoPedidoPorCliente(){
+    const { data, error } = await supa
+      .from("pedidos_cliente")
+      .select("cliente_id, fecha, descripcion")
+      .order("fecha", { ascending: false })
+      .order("created_at", { ascending: false });
+    if(error){ console.error(error); return; }
+    const map = {};
+    (data || []).forEach(p => { if(!(p.cliente_id in map)) map[p.cliente_id] = p; });
+    state.pedidosUltimo = map;
+  }
+
   async function loadNotificaciones(){
     const { data, error } = await supa
       .from("notificaciones")
@@ -3531,7 +3657,7 @@
     userBadgeLabel.textContent = data.rol === "joaquin" ? "Joaquín" : "Tristán";
     userBadge.title = data.email;
 
-    const loads = [loadLeads(), loadClientes(), loadNotificaciones(), loadPreferencias(), loadReporteLayouts()];
+    const loads = [loadLeads(), loadClientes(), loadUltimoPedidoPorCliente(), loadNotificaciones(), loadPreferencias(), loadReporteLayouts()];
     if(state.mode === "tristan") loads.push(loadPrivados());
     await Promise.all(loads);
     subscribeRealtime();
