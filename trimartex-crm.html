@@ -266,6 +266,7 @@
   .cliente-main{ flex:1 1 auto; min-width:0; }
   .cliente-company{ font-size:14px; font-weight:650; letter-spacing:-0.01em; }
   .cliente-sub{ font-size:12px; color:var(--text-dim); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cliente-meta{ font-size:11px; color:var(--text-faint); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .cliente-rubro-tag{
     flex:0 0 auto; font-size:10.5px; font-weight:700; letter-spacing:.02em;
     padding: 3px 8px; border-radius: 999px; white-space:nowrap;
@@ -926,9 +927,20 @@
         <input type="text" id="cin_rubro" placeholder="Ej: Cafetería, Seguridad, Gimnasio...">
       </div>
 
+      <div class="field-row">
+        <div class="field">
+          <label>Estado</label>
+          <div class="cierre-seg" id="clienteEstadoSeg"></div>
+        </div>
+        <div class="field">
+          <label>Último contacto</label>
+          <input type="date" id="cin_ultimo_contacto">
+        </div>
+      </div>
+
       <div class="field">
-        <label>Estado</label>
-        <div class="cierre-seg" id="clienteEstadoSeg"></div>
+        <label>Nota de último pedido</label>
+        <textarea id="cin_ultimo_pedido" placeholder="Qué pidió la última vez..."></textarea>
       </div>
 
       <div class="field">
@@ -1289,6 +1301,27 @@
     return f.rubros.length > 0 || !!f.creadoDesde || !!f.creadoHasta || !!f.modDesde || !!f.modHasta;
   }
 
+  // Filtros en Cartera de clientes: mismas fechas que matchesFilters(), pero
+  // el rubro de un cliente es texto libre (no el enum fijo de RUBROS que
+  // usan los leads), así que un chip de rubro matchea por substring en vez
+  // de por igualdad de clave — antes clientesFiltered() ignoraba state.filtros
+  // por completo y los filtros no tenían ningún efecto en esta página.
+  function matchesFiltersCliente(c){
+    const f = state.filtros;
+    if(f.rubros.length){
+      const texto = (c.rubro || "").toLowerCase();
+      const match = f.rubros.some(k => texto.includes(RUBROS[k].toLowerCase()) || texto.includes(k));
+      if(!match) return false;
+    }
+    const creadoFecha = (c.created_at || "").slice(0, 10);
+    const modFecha = (c.updated_at || "").slice(0, 10);
+    if(f.creadoDesde && creadoFecha < f.creadoDesde) return false;
+    if(f.creadoHasta && creadoFecha > f.creadoHasta) return false;
+    if(f.modDesde && modFecha < f.modDesde) return false;
+    if(f.modHasta && modFecha > f.modHasta) return false;
+    return true;
+  }
+
   // Leads visibles en el pipeline principal: no archivados y sin recontacto activo
   // (una vez enviado a Recontacto, el lead se gestiona sólo desde esa página).
   function leadsForPipelineColumn(colKey){
@@ -1339,7 +1372,7 @@
   function clientesFiltered(){
     return state.clientes.filter(c =>
       (state.carteraFilter === "todos" || c.estado === state.carteraFilter) &&
-      matchesSearchCliente(c, state.search)
+      matchesSearchCliente(c, state.search) && matchesFiltersCliente(c)
     );
   }
 
@@ -1430,11 +1463,16 @@
   function clienteCardHtml(c){
     const wa = toWhatsappLink(c.telefono);
     const sub = [c.contacto, c.rubro].filter(Boolean).join(" · ");
+    const meta = [
+      c.ultimo_contacto_at ? `Último contacto: ${formatDate(c.ultimo_contacto_at)}` : "",
+      c.ultimo_pedido_nota ? `Último pedido: ${c.ultimo_pedido_nota}` : "",
+    ].filter(Boolean).join(" · ");
     return `
     <article class="cliente-card" data-id="${c.id}">
       <div class="cliente-main">
         <div class="cliente-company">${escapeHtml(c.empresa)}</div>
         ${sub ? `<div class="cliente-sub">${escapeHtml(sub)}</div>` : ""}
+        ${meta ? `<div class="cliente-meta">${escapeHtml(meta)}</div>` : ""}
       </div>
       ${c.rubro ? `<span class="cliente-rubro-tag">${escapeHtml(c.rubro)}</span>` : ""}
       <span class="estado-pill estado-${c.estado}">${c.estado === "activo" ? "Activo" : "Inactivo"}</span>
@@ -1837,6 +1875,10 @@
     const isCartera = state.page === "cartera";
     const isReportes = state.page === "reportes" || state.page === "actualizaciones";
     const isPrivate = state.privateMode;
+    // Filtros (rubro/fechas) no tienen nada que filtrar en Reportes ni en
+    // Actualizaciones — esas páginas no listan leads/clientes individuales —
+    // así que se oculta el botón ahí en vez de dejarlo visible sin efecto.
+    filtrosBtn.style.display = isReportes ? "none" : "";
     newLeadBtn.style.display = (!isCartera && (state.mode === "joaquin" || isPrivate) && state.page === "pipeline") ? "flex" : "none";
     archiveBtn.style.display = (!isCartera && !isReportes && (state.mode === "joaquin" || isPrivate)) ? "flex" : "none";
     papeleraBtn.style.display = (!isCartera && !isReportes && (state.mode === "joaquin" || isPrivate)) ? "flex" : "none";
@@ -3005,6 +3047,8 @@
     contacto: document.getElementById("cin_contacto"),
     telefono: document.getElementById("cin_telefono"),
     rubro: document.getElementById("cin_rubro"),
+    ultimoContacto: document.getElementById("cin_ultimo_contacto"),
+    ultimoPedido: document.getElementById("cin_ultimo_pedido"),
     notas: document.getElementById("cin_notas"),
   };
 
@@ -3038,6 +3082,8 @@
     cFields.contacto.value = c ? c.contacto : "";
     cFields.telefono.value = c ? c.telefono : "";
     cFields.rubro.value = c ? (c.rubro || "") : "";
+    cFields.ultimoContacto.value = c ? (c.ultimo_contacto_at || "") : "";
+    cFields.ultimoPedido.value = c ? (c.ultimo_pedido_nota || "") : "";
     cFields.notas.value = c ? c.notas : "";
     cfEmpresa.classList.remove("invalid");
     clienteEstadoValue = c ? c.estado : "activo";
@@ -3077,6 +3123,8 @@
       telefono: cFields.telefono.value.trim(),
       rubro: cFields.rubro.value.trim() || null,
       estado: clienteEstadoValue,
+      ultimo_contacto_at: cFields.ultimoContacto.value || null,
+      ultimo_pedido_nota: cFields.ultimoPedido.value.trim(),
       notas: cFields.notas.value.trim(),
     };
 
