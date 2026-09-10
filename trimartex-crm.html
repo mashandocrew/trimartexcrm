@@ -2664,9 +2664,12 @@
       .filter(l => l.etapa === "cerrado" && l.cierre === "cerrado")
       .reduce((sum, l) => sum + (Number(l.ticket) || 0), 0);
 
-    const cerrados = leadsArr.filter(l => l.cierre === "cerrado").length;
-    const noCerrados = leadsArr.filter(l => l.cierre === "no_cerrado").length;
-    const tasaCierre = (cerrados + noCerrados) ? Math.round((cerrados / (cerrados + noCerrados)) * 100) : null;
+    // Tasa de cierre = leads que llegaron a la etapa "Cerrado" / total de
+    // leads activos (no distingue ganado de perdido, solo si llegaron al
+    // final del pipeline) — corregido a pedido del Sr., antes dividía solo
+    // entre los que ya tenían una decisión tomada.
+    const cerradosEnEtapa = activos.filter(l => l.etapa === "cerrado").length;
+    const tasaCierre = activos.length ? Math.round((cerradosEnEtapa / activos.length) * 100) : null;
 
     const now = new Date();
     const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -2714,7 +2717,7 @@
       deltaHtml = `<div class="widget-stat-delta ${metrics.crecimiento >= 0 ? "up" : "down"}">${metrics.crecimiento >= 0 ? "▲" : "▼"} vs. mes anterior</div>`;
     } else if(def.id === "tasa_cierre"){
       value = metrics.tasaCierre === null ? "—" : metrics.tasaCierre + "%";
-      sub = "sobre leads con cierre definido (cerrado o no cerrado)";
+      sub = "leads que llegaron a Cerrado, sobre el total de leads activos";
     } else if(def.id === "antiguedad"){
       value = metrics.antiguedad + " días";
       sub = "promedio de leads activos sin cerrar";
