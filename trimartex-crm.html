@@ -941,7 +941,8 @@
 
       <div class="field">
         <label>Rubro</label>
-        <input type="text" id="cin_rubro" placeholder="Ej: Cafetería, Seguridad, Gimnasio...">
+        <input type="text" id="cin_rubro" list="cin_rubro_list" placeholder="Ej: Cafetería, Seguridad, Gimnasio...">
+        <datalist id="cin_rubro_list"></datalist>
       </div>
 
       <div class="field-row">
@@ -3137,6 +3138,37 @@
 
   let clienteEstadoValue = "activo";
 
+  const cinRubroList = document.getElementById("cin_rubro_list");
+
+  // Sugerencias de Rubro para el <datalist> del modal de cliente: se arman en
+  // vivo a partir de los rubros ya cargados en la cartera real (state.clientes),
+  // no de una lista fija inventada. Así el campo sigue siendo texto libre (por si
+  // hace falta escribir un rubro nuevo) pero autocompleta con lo que el equipo ya
+  // viene usando, agrupando variantes que solo difieren en mayúsculas/tildes
+  // (ej. "seguridad" / "Seguridad" / "SEGURIDAD" cuentan como una sola sugerencia).
+  function normalizeRubroKey(str){
+    return str.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
+
+  function renderRubrosClienteDatalist(){
+    if(!cinRubroList) return;
+    const groups = new Map(); // key normalizado -> Map(texto original -> cantidad)
+    state.clientes.forEach(c => {
+      const raw = (c.rubro || "").trim();
+      if(!raw) return;
+      const key = normalizeRubroKey(raw);
+      if(!groups.has(key)) groups.set(key, new Map());
+      const variants = groups.get(key);
+      variants.set(raw, (variants.get(raw) || 0) + 1);
+    });
+    const sugeridos = Array.from(groups.values()).map(variants => {
+      // de las variantes de mayúsculas/tildes ya cargadas para este rubro,
+      // sugerimos la más usada (y a igualdad, la más corta) como forma canónica.
+      return Array.from(variants.entries()).sort((a, b) => b[1] - a[1] || a[0].length - b[0].length)[0][0];
+    }).sort((a, b) => a.localeCompare(b, "es"));
+    cinRubroList.innerHTML = sugeridos.map(r => `<option value="${escapeHtml(r)}">`).join("");
+  }
+
   function renderClienteEstadoSeg(){
     const opts = [
       { value:"activo",   label:"Activo" },
@@ -3159,6 +3191,7 @@
     clienteDeleteConfirm.classList.remove("show");
     const isNew = !id;
     const c = id ? state.clientes.find(x => x.id === id) : null;
+    renderRubrosClienteDatalist();
 
     clienteModalTitle.textContent = isNew ? "Nuevo cliente" : "Editar cliente";
     cFields.empresa.value = c ? c.empresa : "";
