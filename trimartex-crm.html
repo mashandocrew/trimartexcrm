@@ -2827,6 +2827,7 @@
         const el = gridEl && gridEl.querySelector(`[gs-id="${id}"]`);
         if(!grid || !el) return;
         const def = WIDGET_DEFS.find(d => d.id === id);
+        el.style.display = "";
         grid.addWidget(el, { x: def.x, y: def.y, w: def.w, h: def.h });
         hiddenSet.delete(id);
         renderHiddenBar(reporte, hiddenSet);
@@ -2886,7 +2887,7 @@
     WIDGET_DEFS.forEach(def => {
       if(hiddenSet.has(def.id)){
         const el = container.querySelector(`[gs-id="${def.id}"]`);
-        if(el) grid.removeWidget(el, false);
+        if(el){ grid.removeWidget(el, false); el.style.display = "none"; }
       }
     });
 
@@ -2898,6 +2899,7 @@
         const id = btn.dataset.widget;
         const el = btn.closest(".grid-stack-item");
         grid.removeWidget(el, false);
+        el.style.display = "none";
         hiddenSet.add(id);
         renderHiddenBar(reporte, hiddenSet);
         persistReportLayout(reporte, grid, hiddenSet);
