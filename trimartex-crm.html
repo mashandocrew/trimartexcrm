@@ -1374,6 +1374,7 @@
     <p>Iniciá sesión para ver el pipeline de leads.</p>
     <button class="btn btn-accent btn-full" id="googleLoginBtn">Continuar con Google</button>
     <p class="auth-denied" id="authDenied" style="display:none;">Tu cuenta de Google inició sesión correctamente, pero no está autorizada para usar este CRM. Pedile acceso a Joaquín.</p>
+    <p class="auth-denied" id="authError" style="display:none;"></p>
   </div>
 </div>
 
@@ -4407,13 +4408,49 @@
   const loginScreen = document.getElementById("loginScreen");
   const googleLoginBtn = document.getElementById("googleLoginBtn");
   const authDenied = document.getElementById("authDenied");
+  const authError = document.getElementById("authError");
   const userBadge = document.getElementById("userBadge");
   const userBadgeLabel = document.getElementById("userBadgeLabel");
   const logoutBtn = document.getElementById("logoutBtn");
 
+  // Redirect fijo (origin + path, sin query/hash): en mobile la URL de origen
+  // suele traer parámetros extra (links compartidos por WhatsApp, un intento
+  // previo fallido que dejó #error=... en el hash, etc). Si redirectTo no
+  // matchea exacto alguna de las Redirect URLs configuradas en Supabase, el
+  // proveedor de Google completa el login pero Supabase rechaza la vuelta y
+  // el usuario termina de nuevo en la pantalla de login sin ningún aviso.
+  const OAUTH_REDIRECT_URL = window.location.origin + window.location.pathname;
+
   googleLoginBtn.addEventListener("click", async () => {
-    await supa.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.href } });
+    authError.style.display = "none";
+    const { error } = await supa.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: OAUTH_REDIRECT_URL },
+    });
+    if(error){
+      authError.textContent = "No se pudo iniciar el login con Google: " + error.message;
+      authError.style.display = "block";
+    }
   });
+
+  // Si Google/Supabase vuelven con un error (login cancelado, redirect URL no
+  // autorizada, etc.) queda en el hash o la query como error_description.
+  // Sin esto, el usuario solo ve que "vuelve al login" sin ninguna pista.
+  // Ojo: esto es de solo lectura — no tocar la URL acá. supabase-js todavía
+  // no terminó de procesar un ?code=/#access_token= en este mismo tick
+  // (detectSessionInUrl es async), así que un replaceState propio puede
+  // borrar el código antes de que lo lea y romper el login.
+  (function reportOAuthErrorIfAny(){
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const queryParams = new URLSearchParams(window.location.search);
+    const description =
+      hashParams.get("error_description") || queryParams.get("error_description") ||
+      hashParams.get("error") || queryParams.get("error");
+    if(description){
+      authError.textContent = "Google/Supabase devolvieron un error: " + decodeURIComponent(description.replace(/\+/g, " "));
+      authError.style.display = "block";
+    }
+  })();
 
   logoutBtn.addEventListener("click", async () => {
     await supa.auth.signOut();
