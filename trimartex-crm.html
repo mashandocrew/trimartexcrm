@@ -499,6 +499,7 @@
   .tag-limpieza{ background: rgba(90,200,250,0.14); color:#7ad0ff; }
   .tag-gastronomia{ background: rgba(255,159,10,0.16); color:#ffb648; }
   .tag-clubes{ background: rgba(48,209,88,0.14); color:#5fe083; }
+  .tag-construccion{ background: rgba(255,214,10,0.16); color:#e8c341; }
   .tag-otro{ background: rgba(150,150,160,0.16); color:#b8b8c0; }
 
   .result-sin_respuesta{ background: rgba(150,150,160,0.14); color:#a9a9b0; }
@@ -569,6 +570,22 @@
   .field.invalid input{ border-color: var(--danger); }
   .field.invalid .field-error{ display:block; }
   select{ appearance:none; -webkit-appearance:none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a9a9b0' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position: right 12px center; padding-right: 30px; }
+
+  /* ---------- Searchable combo (rubro) ---------- */
+  .combo{ position:relative; }
+  .combo-native{ display:none; }
+  .combo-input{ background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a9a9b0' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position: right 12px center; padding-right: 30px; }
+  .combo-list{
+    position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:20;
+    background: var(--surface-2); border:1px solid var(--border); border-radius:10px;
+    max-height:220px; overflow-y:auto; padding:4px; box-shadow: 0 12px 30px rgba(0,0,0,0.4);
+  }
+  .combo-opt{
+    padding:8px 10px; border-radius:7px; font-size:13.5px; color:var(--text); cursor:pointer;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .combo-opt:hover, .combo-opt.active{ background: var(--accent-soft); color:#7ab8ff; }
+  .combo-empty{ padding:8px 10px; font-size:13px; color:var(--text-faint); }
 
   .btn{
     border:none; border-radius:11px; padding:10px 16px; font-size:14px; font-weight:600; cursor:pointer;
@@ -994,13 +1011,18 @@
       <div class="field-row">
         <div class="field" id="f_rubro">
           <label>Rubro</label>
-          <select id="in_rubro">
-            <option value="seguridad">Seguridad</option>
-            <option value="limpieza">Limpieza</option>
-            <option value="gastronomia">Gastronomía</option>
-            <option value="clubes">Clubes / Deportivo</option>
-            <option value="otro">Otro</option>
-          </select>
+          <div class="combo" id="combo_rubro">
+            <input type="text" id="in_rubro_search" class="combo-input" placeholder="Buscar rubro..." autocomplete="off">
+            <select id="in_rubro" class="combo-native">
+              <option value="seguridad">Seguridad</option>
+              <option value="limpieza">Limpieza</option>
+              <option value="gastronomia">Gastronomía</option>
+              <option value="clubes">Clubes / Deportivo</option>
+              <option value="construccion">Construcción</option>
+              <option value="otro">Otro</option>
+            </select>
+            <div class="combo-list" id="in_rubro_list" hidden></div>
+          </div>
         </div>
         <div class="field" id="f_ticket">
           <label id="ticketLabel">Ticket estimado</label>
@@ -1424,11 +1446,12 @@
   const ABC_CYCLE = { "": "A", "A": "B", "B": "C", "C": "" }; // click para ciclar Sin clasificar -> A -> B -> C -> Sin clasificar
 
   const RUBROS = {
-    seguridad:  "Seguridad",
-    limpieza:   "Limpieza",
-    gastronomia:"Gastronomía",
-    clubes:     "Clubes / Deportivo",
-    otro:       "Otro",
+    seguridad:   "Seguridad",
+    limpieza:    "Limpieza",
+    gastronomia: "Gastronomía",
+    clubes:      "Clubes / Deportivo",
+    construccion:"Construcción",
+    otro:        "Otro",
   };
   const RESULTADOS = {
     sin_respuesta: "Sin respuesta",
@@ -2476,6 +2499,69 @@
     notas: document.getElementById("f_notas"),
   };
 
+  /* ---- Rubro: combo desplegable con búsqueda ---- */
+  const rubroSelect = fields.rubro;
+  const rubroSearch = document.getElementById("in_rubro_search");
+  const rubroList = document.getElementById("in_rubro_list");
+
+  function normalizeText(s){
+    return (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
+  function rubroLabel(key){ return RUBROS[key] || ""; }
+  function syncRubroDisplay(){ rubroSearch.value = rubroLabel(rubroSelect.value); }
+  function setRubroValue(key){
+    rubroSelect.value = key;
+    syncRubroDisplay();
+  }
+  function renderRubroList(filter){
+    const q = normalizeText(filter);
+    const keys = Object.keys(RUBROS).filter(k => !q || normalizeText(RUBROS[k]).includes(q));
+    rubroList.innerHTML = keys.length
+      ? keys.map(k => `<div class="combo-opt${k === rubroSelect.value ? " active" : ""}" data-key="${k}">${escapeHtml(RUBROS[k])}</div>`).join("")
+      : `<div class="combo-empty">Sin resultados</div>`;
+    rubroList.querySelectorAll(".combo-opt").forEach(el => {
+      el.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        setRubroValue(el.dataset.key);
+        closeRubroList();
+      });
+    });
+  }
+  function openRubroList(){
+    renderRubroList(rubroSearch.value === rubroLabel(rubroSelect.value) ? "" : rubroSearch.value);
+    rubroList.hidden = false;
+  }
+  function closeRubroList(){ rubroList.hidden = true; }
+
+  rubroSearch.addEventListener("focus", () => { rubroSearch.select(); openRubroList(); });
+  rubroSearch.addEventListener("input", () => { renderRubroList(rubroSearch.value); rubroList.hidden = false; });
+  rubroSearch.addEventListener("keydown", (e) => {
+    if(rubroList.hidden && (e.key === "ArrowDown" || e.key === "ArrowUp")){ openRubroList(); return; }
+    const opts = Array.from(rubroList.querySelectorAll(".combo-opt"));
+    let idx = opts.findIndex(o => o.classList.contains("active"));
+    if(e.key === "ArrowDown"){
+      e.preventDefault();
+      idx = Math.min(idx + 1, opts.length - 1);
+      opts.forEach(o => o.classList.remove("active"));
+      if(opts[idx]){ opts[idx].classList.add("active"); opts[idx].scrollIntoView({block:"nearest"}); }
+    } else if(e.key === "ArrowUp"){
+      e.preventDefault();
+      idx = Math.max(idx - 1, 0);
+      opts.forEach(o => o.classList.remove("active"));
+      if(opts[idx]){ opts[idx].classList.add("active"); opts[idx].scrollIntoView({block:"nearest"}); }
+    } else if(e.key === "Enter"){
+      e.preventDefault();
+      const active = opts.find(o => o.classList.contains("active")) || opts[0];
+      if(active){ setRubroValue(active.dataset.key); closeRubroList(); }
+    } else if(e.key === "Escape"){
+      syncRubroDisplay();
+      closeRubroList();
+    }
+  });
+  document.addEventListener("click", (e) => {
+    if(!document.getElementById("combo_rubro").contains(e.target)) closeRubroList();
+  });
+
   // Etapa en la que se crea el próximo lead nuevo — la fija el botón "+" de
   // la columna que se haya tocado (o "nuevo" por defecto, vía el botón
   // "Nuevo lead" del header).
@@ -2508,6 +2594,7 @@
     fields.contacto.value = lead ? lead.contacto : "";
     fields.telefono.value = lead ? lead.telefono : "";
     fields.rubro.value = lead ? lead.rubro : "seguridad";
+    syncRubroDisplay();
     fields.ticket.value = lead && lead.ticket ? lead.ticket : "";
     // En Pedido confirmado el monto ya no es una estimación — es lo que se
     // vendió. "Ticket estimado" confundía en esa etapa (parece un ARS
