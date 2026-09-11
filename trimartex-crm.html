@@ -573,7 +573,6 @@
 
   /* ---------- Searchable combo (rubro) ---------- */
   .combo{ position:relative; }
-  .combo-native{ display:none; }
   .combo-input{ background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a9a9b0' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position: right 12px center; padding-right: 30px; }
   .combo-list{
     position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:20;
@@ -1013,14 +1012,7 @@
           <label>Rubro</label>
           <div class="combo" id="combo_rubro">
             <input type="text" id="in_rubro_search" class="combo-input" placeholder="Buscar rubro..." autocomplete="off">
-            <select id="in_rubro" class="combo-native">
-              <option value="seguridad">Seguridad</option>
-              <option value="limpieza">Limpieza</option>
-              <option value="gastronomia">Gastronomía</option>
-              <option value="clubes">Clubes / Deportivo</option>
-              <option value="construccion">Construcción</option>
-              <option value="otro">Otro</option>
-            </select>
+            <input type="hidden" id="in_rubro" value="seguridad">
             <div class="combo-list" id="in_rubro_list" hidden></div>
           </div>
         </div>
@@ -1445,13 +1437,48 @@
 
   const ABC_CYCLE = { "": "A", "A": "B", "B": "C", "C": "" }; // click para ciclar Sin clasificar -> A -> B -> C -> Sin clasificar
 
+  // Enum completo de rubros: los 5 históricos de leads + cada rubro real ya
+  // cargado en la Cartera de clientes (relevado de clientes.rubro en
+  // producción), para que "Nuevo lead" ofrezca las mismas opciones que ya se
+  // usan en Cartera en vez de un puñado fijo inventado. "otro" sigue de
+  // catch-all para lo que todavía no está enumerado acá.
   const RUBROS = {
-    seguridad:   "Seguridad",
-    limpieza:    "Limpieza",
-    gastronomia: "Gastronomía",
-    clubes:      "Clubes / Deportivo",
-    construccion:"Construcción",
-    otro:        "Otro",
+    seguridad:        "Seguridad",
+    limpieza:         "Limpieza",
+    gastronomia:      "Gastronomía",
+    clubes:           "Clubes / Deportivo",
+    construccion:     "Construcción",
+    cafe:             "Café",
+    restaurante:      "Restaurante",
+    gimnasios:        "Gimnasios",
+    alimentos:        "Alimentos",
+    electricidad:     "Electricidad",
+    aberturas:        "Aberturas",
+    transporte:       "Transporte",
+    marcademoda:      "Marca de moda",
+    bebidas:          "Bebidas",
+    lubricentro:      "Lubricentro",
+    bodega:           "Bodega",
+    fertilizantes:    "Fertilizantes",
+    tecnologia:       "Tecnología",
+    cerveceria:       "Cervecería",
+    matafuegos:       "Matafuegos",
+    club:             "Club",
+    gruas:            "Grúas",
+    mineria:          "Minería",
+    mallaantigranizo: "Malla antigranizo",
+    insumosmedicos:   "Insumos médicos",
+    filtrados:        "Filtrados",
+    cal:              "Cal",
+    bar:              "Bar",
+    casafunebre:      "Casa fúnebre",
+    etiquetas:        "Etiquetas",
+    desinfecciones:   "Desinfecciones",
+    inmobiliaria:     "Inmobiliaria",
+    canabis:          "Cannabis",
+    carpas:           "Carpas",
+    calefaccion:      "Calefacción",
+    otro:             "Otro",
   };
   const RESULTADOS = {
     sin_respuesta: "Sin respuesta",
@@ -2170,8 +2197,23 @@
     });
   }
 
+  // Los 5 rubros históricos (seguridad/limpieza/gastronomia/clubes/
+  // construccion/otro) tienen su color fijo vía clase CSS tag-*. El enum se
+  // amplió con cada rubro real de Cartera y sería un montón de clases nuevas
+  // para mantener a mano, así que esos generan su color determinísticamente
+  // (mismo rubro -> mismo color siempre) en vez de una clase fija.
+  const RUBROS_CON_COLOR_FIJO = new Set(["seguridad", "limpieza", "gastronomia", "clubes", "construccion", "otro"]);
+  function rubroTagAttrs(key){
+    if(RUBROS_CON_COLOR_FIJO.has(key)) return { cls: `tag-${key}`, style: "" };
+    let hash = 0;
+    for(let i = 0; i < (key || "").length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+    const hue = hash % 360;
+    return { cls: "tag-dynamic", style: ` style="background:hsla(${hue},70%,55%,0.16);color:hsl(${hue},75%,72%);"` };
+  }
+
   function cardHtml(lead, isRecontacto, readOnly){
     const wa = toWhatsappLink(lead.telefono);
+    const rubroTag = rubroTagAttrs(lead.rubro);
     return `
     <article class="lead-card" data-id="${lead.id}">
       <div class="card-top">
@@ -2180,7 +2222,7 @@
           ${lead.contacto ? `<div class="card-contact">${escapeHtml(lead.contacto)}</div>` : ""}
         </div>
         ${abcBadgeHtml(lead.clasificacion_abc, lead.id, activeTable(), readOnly)}
-        <span class="card-tag tag-${lead.rubro}">${escapeHtml(RUBROS[lead.rubro] || "Otro")}</span>
+        <span class="card-tag ${rubroTag.cls}"${rubroTag.style}>${escapeHtml(RUBROS[lead.rubro] || "Otro")}</span>
       </div>
       <div class="card-mid">
         <span class="card-ticket">${formatARS(lead.ticket)}</span>
@@ -4025,15 +4067,21 @@
   inEnviarDestino.addEventListener("change", renderEnviarEtapaOptions);
 
   // El rubro de Cartera es texto libre (ver renderRubrosClienteDatalist); el
-  // de los leads es un enum fijo de 5 valores. Si no matchea ninguno, el
-  // texto original no se pierde: queda igual en las notas del lead nuevo.
+  // de los leads es el enum RUBROS. Primero intenta un match exacto contra el
+  // enum (que ya incluye cada rubro real cargado en Cartera al momento de
+  // ampliarlo) y solo si no matchea nada cae al bucket por palabra clave de
+  // abajo. Si tampoco matchea ningún bucket, el texto original no se pierde:
+  // queda igual en las notas del lead nuevo.
   function mapRubroACliente(rubroTexto){
     const k = normalizeRubroKey(rubroTexto || "");
     if(!k) return "otro";
+    const enumKey = k.replace(/\s+/g, "");
+    if(RUBROS[enumKey]) return enumKey;
     if(k.includes("segur")) return "seguridad";
     if(k.includes("limp")) return "limpieza";
     if(/(gastro|comida|restaur|resto|bar|cafe|bebida|cerveceria|bodega)/.test(k)) return "gastronomia";
     if(/(club|deport|gimnas)/.test(k)) return "clubes";
+    if(/(constru|obra)/.test(k)) return "construccion";
     if(k === "otro") return "otro";
     return "otro";
   }
