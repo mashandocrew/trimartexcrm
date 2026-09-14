@@ -198,6 +198,9 @@
     color:var(--text); font-size:13px; padding:6px 4px;
   }
 
+  .cfg-check-grid{ display:flex; flex-wrap:wrap; gap:8px 16px; }
+  .cfg-check-grid label{ display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text-dim); cursor:pointer; }
+
   .auth-screen{
     position: fixed; inset:0; z-index: 200; background: var(--bg);
     display:flex; align-items:center; justify-content:center; padding:20px;
@@ -260,6 +263,10 @@
     border-bottom: 1px solid var(--border-soft);
   }
   .cartera-filters::-webkit-scrollbar{ display:none; }
+  /* La bandeja de notificaciones reusa .cartera-filters (mismos pills), pero
+     vive dentro de un modal, no del header — siempre visible, sin el
+     display:none de base que los demás usos togglean por JS. */
+  .notif-filtros{ display:flex; padding: 0 0 10px; border-bottom:none; background:transparent; }
   /* .board es flex-row (para las columnas del pipeline); sin flex:1 acá, este
      wrap de una sola columna se encogía a lo ancho de su contenido en vez de
      ocupar el espacio disponible, dejando casi toda la pantalla en blanco a
@@ -712,6 +719,9 @@
   .notif-row:hover{ background: var(--surface-2); }
   .notif-row.notif-unread{ border-left-color: var(--accent); }
   .notif-row.notif-unread .info b::before{ content:"● "; color: var(--accent); font-size:9px; }
+  .notif-row .info{ cursor:pointer; }
+  .notif-delete-btn{ width:22px; height:22px; align-self:center; flex:0 0 auto; color:var(--text-faint); }
+  .notif-delete-btn:hover{ color:var(--danger); }
 
   /* toast */
   #toast{
@@ -722,6 +732,66 @@
     opacity:0; pointer-events:none; transition: opacity .25s ease, transform .25s ease;
   }
   #toast.show{ opacity:1; transform: translateX(-50%) translateY(0); }
+
+  /* cartel emergente estilo macOS — independiente del #toast de arriba (uno
+     es la confirmación breve de "guardado"/"borrado"; este es el aviso real
+     de notificaciones, con más info y su propio ciclo de vida). */
+  .notif-toast-stack{
+    position: fixed; top: 16px; right: 16px; z-index: 400;
+    display:flex; flex-direction:column; gap:10px;
+    width:min(360px, calc(100vw - 32px));
+  }
+  .notif-toast{
+    position:relative; display:flex; gap:11px; align-items:flex-start;
+    /* Traslúcido con blur, como el Notification Center de macOS — no un
+       panel opaco más del CRM. */
+    background: rgba(28,28,31,0.72); backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border:1px solid rgba(255,255,255,0.08); border-radius:14px;
+    padding:12px 14px 14px; box-shadow: 0 18px 40px -12px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35);
+    transform:translateX(130%); opacity:0; pointer-events:auto;
+    animation: notif-toast-in .38s cubic-bezier(.2,.8,.25,1) forwards;
+    overflow:hidden; cursor:pointer;
+  }
+  .notif-toast.leaving{ animation: notif-toast-out .32s cubic-bezier(.4,0,1,1) forwards; }
+  @keyframes notif-toast-in{ to{ transform:translateX(0); opacity:1; } }
+  @keyframes notif-toast-out{ to{ transform:translateX(130%); opacity:0; } }
+  @media (prefers-reduced-motion: reduce){
+    .notif-toast{ transform:none; animation:notif-toast-fade-in .25s ease forwards; }
+    .notif-toast.leaving{ animation:notif-toast-fade-out .2s ease forwards; }
+    @keyframes notif-toast-fade-in{ from{ opacity:0; } to{ opacity:1; } }
+    @keyframes notif-toast-fade-out{ to{ opacity:0; } }
+  }
+  .notif-toast-icon{
+    flex:0 0 auto; width:32px; height:32px; border-radius:9px; margin-top:1px;
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px;
+  }
+  .notif-toast-body{ min-width:0; flex:1 1 auto; }
+  .notif-toast-head{ display:flex; align-items:baseline; gap:8px; }
+  .notif-toast-app{ font-size:10.5px; font-weight:600; color:var(--text-dim); text-transform:uppercase; letter-spacing:.04em; }
+  .notif-toast-time{ font-size:11px; color:var(--text-faint); margin-left:auto; flex:0 0 auto; }
+  .notif-toast-title{ font-size:13.5px; font-weight:600; margin-top:2px; color:var(--text); }
+  .notif-toast-msg{ font-size:12.5px; color:var(--text-dim); margin-top:2px; line-height:1.45; }
+  .notif-toast-close{
+    position:absolute; top:7px; right:7px; width:20px; height:20px; border-radius:999px;
+    border:none; background:rgba(255,255,255,0.12); color:var(--text);
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    opacity:0; transition:opacity .12s, background .12s;
+  }
+  .notif-toast:hover .notif-toast-close, .notif-toast-close:focus-visible{ opacity:1; }
+  .notif-toast-close:hover{ background:rgba(255,255,255,0.22); }
+  .notif-toast-progress{
+    position:absolute; left:0; bottom:0; height:2px; background:var(--accent);
+    width:100%; transform-origin:left; animation:notif-toast-progress linear forwards;
+  }
+  @keyframes notif-toast-progress{ to{ transform:scaleX(0); } }
+  .notif-toast-dismiss-all{
+    align-self:flex-end; font-size:11.5px; font-weight:600; color:var(--text-dim);
+    background:rgba(28,28,31,0.72); backdrop-filter: blur(20px);
+    border:1px solid rgba(255,255,255,0.08); border-radius:999px; padding:6px 12px;
+    cursor:pointer; display:flex; align-items:center; gap:5px;
+  }
+  .notif-toast-dismiss-all:hover{ color:var(--text); }
 
   @media (max-width: 860px){
     .board{ display:block; padding: 12px 12px 20px; }
@@ -1379,6 +1449,7 @@
       <button class="modal-close" id="notifCloseBtn"><svg viewBox="0 0 24 24" fill="none"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
     </div>
     <div class="modal-body">
+      <nav class="cartera-filters notif-filtros" id="notifFiltros"></nav>
       <div class="archive-list" id="notifList"></div>
     </div>
     <div class="modal-foot">
@@ -1402,10 +1473,36 @@
         <label><input type="checkbox" id="cfg_canal_email"> Notificaciones por email</label>
       </div>
       <div class="field">
+        <label><input type="checkbox" id="cfg_canal_toast"> Cartel emergente en pantalla (estilo macOS)</label>
+      </div>
+
+      <div class="field" id="f_cfg_tipos">
+        <label>Recibir avisos de tipo</label>
+        <div class="cfg-check-grid" id="cfgTipos"></div>
+      </div>
+
+      <div class="field" id="f_cfg_abc">
+        <label>Generar avisos de prioridad</label>
+        <div class="cfg-check-grid" id="cfgAbc"></div>
+      </div>
+
+      <div class="field">
         <label>Avisar cuando un lead no tiene movimientos hace (días), por etapa</label>
         <div id="cfgDiasPorEtapa"></div>
       </div>
-      <p class="papelera-hint">Estas alertas ("seguimiento vencido", "sin novedades") son individuales: cada usuario configura su propio umbral y canales. El umbral de días es distinto en cada etapa — el de Recontacto sigue su propio calendario semanal, aparte de esto. Las de la Gestión Privada de Tristán son 100% privadas.</p>
+
+      <div class="field" id="f_cfg_ajuste_abc">
+        <label>Ajuste de días según prioridad (sumado al umbral por etapa — negativo avisa antes)</label>
+        <div class="cfg-dias-row"><label for="cfg_ajuste_A">Prioridad A</label><input type="number" id="cfg_ajuste_A" min="-30" max="30" step="1"></div>
+        <div class="cfg-dias-row"><label for="cfg_ajuste_B">Prioridad B</label><input type="number" id="cfg_ajuste_B" min="-30" max="30" step="1"></div>
+        <div class="cfg-dias-row"><label for="cfg_ajuste_C">Prioridad C</label><input type="number" id="cfg_ajuste_C" min="-30" max="30" step="1"></div>
+      </div>
+
+      <div class="field" id="f_cfg_compartir" style="display:none;">
+        <label><input type="checkbox" id="cfg_compartir_con_otro"> Dejar que Tristán vea mi bandeja (solo lectura)</label>
+      </div>
+
+      <p class="papelera-hint">Estas alertas ("seguimiento vencido", "sin novedades") son individuales: cada usuario configura su propio umbral y canales. El umbral de días es distinto en cada etapa — el de Recontacto sigue su propio calendario semanal, aparte de esto. Las de la Gestión Privada de Tristán son 100% privadas. Los avisos de prioridad filtrada ni se generan (no quedan guardados en ningún lado); el ajuste de días por prioridad solo aplica a "sin novedades".</p>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" id="notifConfigCancelBtn">Cerrar</button>
@@ -1470,6 +1567,13 @@
 </div>
 
 <div id="toast"></div>
+
+<div class="notif-toast-stack" id="notifToastStack" aria-live="polite">
+  <button type="button" class="notif-toast-dismiss-all" id="notifToastDismissAll" hidden>
+    Cerrar todas
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+  </button>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js"></script>
@@ -1634,6 +1738,10 @@
     historyCache: {},       // leadId -> lead_history[]
     novedadesCache: {},     // leadId -> lead_novedades[]
     notificaciones: [],     // bandeja propia (RLS ya filtra por destinatario)
+    notifFiltro: { perfil: "todos", abc: "todos" }, // perfil: "todos"|"jp"|"tristan" — abc: "todos"|"A"|"B"|"C"|"sin"
+    notifModo: "propia",       // "propia" | "compartida" — solo tristan puede pasar a "compartida"
+    notifEmailCompartido: null, // email de Joaquín, solo si él activó compartir_con_otro (si no, null)
+    notificacionesCompartidas: [], // bandeja de Joaquín, solo lectura, cargada bajo demanda
     preferencias: null,     // fila propia de preferencias_notificacion
     recordatoriosCache: {}, // leadId (compartido o privado) -> recordatorios[]
     pedidosCache: {},       // clienteId -> pedidos_cliente[] (historial completo, cargado al abrir el modal)
@@ -3301,7 +3409,39 @@
   const notifConfigOverlay = document.getElementById("notifConfigOverlay");
   const cfgCanalInapp = document.getElementById("cfg_canal_inapp");
   const cfgCanalEmail = document.getElementById("cfg_canal_email");
+  const cfgCanalToast = document.getElementById("cfg_canal_toast");
   const cfgDiasPorEtapa = document.getElementById("cfgDiasPorEtapa");
+  const cfgTipos = document.getElementById("cfgTipos");
+  const cfgAbc = document.getElementById("cfgAbc");
+  const cfgCompartirField = document.getElementById("f_cfg_compartir");
+  const cfgCompartirConOtro = document.getElementById("cfg_compartir_con_otro");
+
+  // Todos los tipos de aviso que existen hoy — lead_compartido solo le llega
+  // a Joaquín (lo genera compartir_lead_tristan()), así que a Tristán no se
+  // le muestra ese checkbox: no tendría ningún efecto para él.
+  const TIPOS_AVISO = [
+    { key:"seguimiento_vencido", label:"Seguimiento vencido", soloJoaquin:false },
+    { key:"sin_movimiento", label:"Sin novedades", soloJoaquin:false },
+    { key:"recordatorio_manual", label:"Recordatorio manual", soloJoaquin:false },
+    { key:"recordatorio_automatico", label:"Recordatorio automático", soloJoaquin:false },
+    { key:"lead_compartido", label:"Lead compartido", soloJoaquin:true },
+  ];
+  const ABC_AVISO = [{key:"A",label:"A"},{key:"B",label:"B"},{key:"C",label:"C"},{key:"sin",label:"Sin clasificar"}];
+
+  function renderCfgTipos(muted){
+    const mutedSet = new Set(muted || []);
+    cfgTipos.innerHTML = TIPOS_AVISO
+      .filter(t => !t.soloJoaquin || state.mode === "joaquin")
+      .map(t => `<label><input type="checkbox" data-cfg-tipo="${t.key}" ${mutedSet.has(t.key) ? "" : "checked"}> ${escapeHtml(t.label)}</label>`)
+      .join("");
+  }
+
+  function renderCfgAbc(muted){
+    const mutedSet = new Set(muted || []);
+    cfgAbc.innerHTML = ABC_AVISO
+      .map(a => `<label><input type="checkbox" data-cfg-abc="${a.key}" ${mutedSet.has(a.key) ? "" : "checked"}> ${escapeHtml(a.label)}</label>`)
+      .join("");
+  }
 
   // Valores de partida si preferencias.dias_por_etapa todavía no trae una
   // etapa (usuario nuevo, o etapa agregada después) — nunca se usan para
@@ -3334,12 +3474,95 @@
     notifBadge.textContent = n > 9 ? "9+" : String(n);
   }
 
+  // Perfil de una notificación: se deriva de a qué lead apunta (lead_id →
+  // pipeline compartido/JP, lead_privado_id → Gestión Privada de Tristán),
+  // sin agregar columna nueva — evita que perfil y lead_id/lead_privado_id
+  // puedan quedar inconsistentes entre sí.
+  function notifPerfil(n){
+    return n.lead_id ? "jp" : "tristan";
+  }
+
+  function leadDeNotif(n){
+    if(n.lead_id) return state.leads.find(l => l.id === n.lead_id);
+    if(n.lead_privado_id) return state.privados.find(l => l.id === n.lead_privado_id);
+    return null;
+  }
+
+  // "sin" agrupa notificaciones cuyo lead todavía no tiene clasificación ABC
+  // cargada (carga manual, ver migración 20260909000007) — nunca se pierden
+  // del filtro por quedar en un grupo sin nombre.
+  function notifAbc(n){
+    const lead = leadDeNotif(n);
+    return (lead && lead.clasificacion_abc) || "sin";
+  }
+
+  const NOTIF_FILTRO_PERFIL = [{key:"todos",label:"Todos"},{key:"jp",label:"JP"},{key:"tristan",label:"Tristán"}];
+  const NOTIF_FILTRO_ABC = [{key:"todos",label:"Todos"},{key:"A",label:"A"},{key:"B",label:"B"},{key:"C",label:"C"},{key:"sin",label:"Sin clasificar"}];
+
+  // Bandeja activa según el modo: "propia" es la de siempre (RLS: solo mis
+  // notificaciones); "compartida" es la de Joaquín, solo lectura, y solo
+  // existe si él activó compartir_con_otro (ver notifEmailCompartido).
+  function notifListaActiva(){
+    return state.notifModo === "compartida" ? state.notificacionesCompartidas : state.notificaciones;
+  }
+
+  async function fetchNotificacionesCompartidas(){
+    if(!state.notifEmailCompartido) return;
+    const { data, error } = await supa
+      .from("notificaciones")
+      .select("*")
+      .eq("destinatario_email", state.notifEmailCompartido)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if(error){ console.error(error); return; }
+    state.notificacionesCompartidas = data || [];
+  }
+
+  function notificacionesFiltradas(){
+    return notifListaActiva().filter(n =>
+      (state.notifFiltro.perfil === "todos" || notifPerfil(n) === state.notifFiltro.perfil) &&
+      (state.notifFiltro.abc === "todos" || notifAbc(n) === state.notifFiltro.abc)
+    );
+  }
+
+  function renderNotifFiltros(){
+    const el = document.getElementById("notifFiltros");
+    if(!el) return;
+    const modoTabs = state.notifEmailCompartido
+      ? `<button type="button" class="mobile-tab ${state.notifModo === "propia" ? "active" : ""}" data-notif-modo="propia">Mías</button>
+         <button type="button" class="mobile-tab ${state.notifModo === "compartida" ? "active" : ""}" data-notif-modo="compartida">De Joaquín</button>
+         <span class="tareas-filter-sep"></span>`
+      : "";
+    el.innerHTML = `
+      ${modoTabs}
+      ${NOTIF_FILTRO_PERFIL.map(f => `<button type="button" class="mobile-tab ${f.key === state.notifFiltro.perfil ? "active" : ""}" data-notif-perfil="${f.key}">${escapeHtml(f.label)}</button>`).join("")}
+      <span class="tareas-filter-sep"></span>
+      ${NOTIF_FILTRO_ABC.map(f => `<button type="button" class="mobile-tab ${f.key === state.notifFiltro.abc ? "active" : ""}" data-notif-abc="${f.key}">${escapeHtml(f.label)}</button>`).join("")}
+    `;
+    el.querySelectorAll("[data-notif-modo]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        state.notifModo = btn.dataset.notifModo;
+        if(state.notifModo === "compartida" && !state.notificacionesCompartidas.length) await fetchNotificacionesCompartidas();
+        renderNotifList();
+      });
+    });
+    el.querySelectorAll("[data-notif-perfil]").forEach(btn => {
+      btn.addEventListener("click", () => { state.notifFiltro.perfil = btn.dataset.notifPerfil; renderNotifList(); });
+    });
+    el.querySelectorAll("[data-notif-abc]").forEach(btn => {
+      btn.addEventListener("click", () => { state.notifFiltro.abc = btn.dataset.notifAbc; renderNotifList(); });
+    });
+  }
+
   function renderNotifList(){
-    if(!canalInappActivo()){
+    renderNotifFiltros();
+    const soloLectura = state.notifModo === "compartida";
+    document.getElementById("notifMarkAllReadBtn").style.display = soloLectura ? "none" : "";
+    if(!soloLectura && !canalInappActivo()){
       notifList.innerHTML = `<div class="archive-empty">Tenés las notificaciones dentro del CRM desactivadas. Podés reactivarlas en el ícono de configuración (⚙).</div>`;
       return;
     }
-    const list = state.notificaciones;
+    const list = notificacionesFiltradas();
     notifList.innerHTML = list.length
       ? list.map(n => `
         <div class="archive-row notif-row ${n.leida ? "" : "notif-unread"}" data-id="${n.id}">
@@ -3348,15 +3571,27 @@
             <span>${escapeHtml(n.mensaje)}</span>
             <span>${formatDateTime(n.created_at)}</span>
           </div>
+          ${soloLectura ? "" : `<button type="button" class="modal-close notif-delete-btn" data-id="${n.id}" title="Borrar"><svg viewBox="0 0 24 24" fill="none"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>`}
         </div>
       `).join("")
-      : `<div class="archive-empty">No tenés notificaciones.</div>`;
-    notifList.querySelectorAll(".notif-row").forEach(row => {
-      row.addEventListener("click", () => {
-        const n = state.notificaciones.find(x => x.id === row.dataset.id);
-        if(n) abrirNotificacion(n);
+      : `<div class="archive-empty">${notifListaActiva().length ? "Ninguna notificación coincide con el filtro." : (soloLectura ? "Joaquín no tiene notificaciones." : "No tenés notificaciones.")}</div>`;
+    notifList.querySelectorAll(".notif-row .info").forEach(info => {
+      info.addEventListener("click", () => {
+        const n = notifListaActiva().find(x => x.id === info.closest(".notif-row").dataset.id);
+        if(n) abrirNotificacion(n, soloLectura);
       });
     });
+    notifList.querySelectorAll(".notif-delete-btn").forEach(btn => {
+      btn.addEventListener("click", (e) => { e.stopPropagation(); borrarNotificacion(btn.dataset.id); });
+    });
+  }
+
+  async function borrarNotificacion(id){
+    state.notificaciones = state.notificaciones.filter(n => n.id !== id);
+    renderNotifBadge();
+    renderNotifList();
+    const { error } = await supa.from("notificaciones").delete().eq("id", id);
+    if(error){ console.error(error); toast("No se pudo borrar la notificación"); }
   }
 
   async function marcarNotificacionLeida(n){
@@ -3368,8 +3603,11 @@
     if(error) console.error(error);
   }
 
-  function abrirNotificacion(n){
-    marcarNotificacionLeida(n);
+  // soloLectura: notificaciones ajenas (bandeja compartida de Joaquín) —
+  // igual navega al lead, pero nunca marca leída (no le corresponde a
+  // Tristán tocar el estado de leída/no leída de Joaquín).
+  function abrirNotificacion(n, soloLectura){
+    if(!soloLectura) marcarNotificacionLeida(n);
     const leadId = n.lead_id || n.lead_privado_id;
     if(!leadId) return;
     if(n.lead_id) state.privateMode = false;
@@ -3383,6 +3621,90 @@
   notifBtn.addEventListener("click", () => { renderNotifList(); notifOverlay.classList.add("open"); });
   document.getElementById("notifCloseBtn").addEventListener("click", () => notifOverlay.classList.remove("open"));
   notifOverlay.addEventListener("click", (e) => { if(e.target === notifOverlay) notifOverlay.classList.remove("open"); });
+
+  /* ============ Cartel emergente (estilo macOS) ============ */
+  const notifToastStack = document.getElementById("notifToastStack");
+  const notifToastDismissAll = document.getElementById("notifToastDismissAll");
+  const NOTIF_TOAST_DURATION_MS = 6000;
+
+  // El ícono del cartel muestra la prioridad ABC real del lead (misma
+  // lectura que el badge de la tarjeta Kanban y de Cartera) — no un color
+  // por tipo de aviso, que confundiría dos escalas de "urgencia" distintas.
+  // "lead_compartido" no tiene lead con ABC (es un aviso de traspaso, no de
+  // seguimiento), así que usa el acento de la app en vez de un color ABC.
+  function notifToastIcono(n){
+    if(n.tipo === "lead_compartido") return { letra:"→", claseAbc:"", style:"background:var(--accent-soft);color:var(--accent);" };
+    const abc = notifAbc(n);
+    const claseAbc = abc === "A" ? "abc-a" : abc === "B" ? "abc-b" : abc === "C" ? "abc-c" : "";
+    return { letra: abc === "sin" ? "—" : abc, claseAbc, style:"" };
+  }
+
+  function notifToastHabilitado(n){
+    const p = state.preferencias;
+    if(p && p.canal_toast === false) return false;
+    if(p && (p.tipos_mute || []).includes(n.tipo)) return false;
+    if(p && (p.abc_mute || []).includes(notifAbc(n))) return false;
+    return true;
+  }
+
+  function actualizarDismissAllToast(){
+    notifToastDismissAll.hidden = notifToastStack.querySelectorAll(".notif-toast").length === 0;
+  }
+
+  function spawnNotifToast(n){
+    if(!notifToastHabilitado(n)) return;
+    const ic = notifToastIcono(n);
+    const el = document.createElement("div");
+    el.className = "notif-toast";
+    el.dataset.id = n.id;
+    el.innerHTML = `
+      <span class="notif-toast-icon abc-badge ${ic.claseAbc}" style="${ic.style}">${escapeHtml(ic.letra)}</span>
+      <span class="notif-toast-body">
+        <span class="notif-toast-head">
+          <span class="notif-toast-app">Trimartex CRM</span>
+          <span class="notif-toast-time">ahora</span>
+        </span>
+        <div class="notif-toast-title">${escapeHtml(n.titulo)}</div>
+        <div class="notif-toast-msg">${escapeHtml(n.mensaje)}</div>
+      </span>
+      <button type="button" class="notif-toast-close" aria-label="Cerrar aviso">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+      </button>
+      <span class="notif-toast-progress" style="animation-duration:${NOTIF_TOAST_DURATION_MS}ms"></span>
+    `;
+    notifToastStack.insertBefore(el, notifToastDismissAll);
+    actualizarDismissAllToast();
+
+    let dismissed = false;
+    let timer = setTimeout(dismiss, NOTIF_TOAST_DURATION_MS);
+    el.addEventListener("mouseenter", () => clearTimeout(timer));
+    el.addEventListener("mouseleave", () => { timer = setTimeout(dismiss, 1500); });
+
+    function dismiss(){
+      if(dismissed) return;
+      dismissed = true;
+      el.classList.add("leaving");
+      el.addEventListener("animationend", () => { el.remove(); actualizarDismissAllToast(); }, { once:true });
+    }
+
+    el.querySelector(".notif-toast-close").addEventListener("click", (e) => { e.stopPropagation(); dismiss(); });
+    el.addEventListener("click", () => { dismiss(); abrirNotificacion(n, false); });
+  }
+
+  function dismissAllNotifToasts(){
+    notifToastStack.querySelectorAll(".notif-toast").forEach(el => el.remove());
+    actualizarDismissAllToast();
+  }
+  notifToastDismissAll.addEventListener("click", dismissAllNotifToasts);
+
+  // Al abrir/recargar el CRM, encadena como carteles las notificaciones no
+  // leídas que ya estaban pendientes (además de las que lleguen en vivo por
+  // realtime, ver handleNotifRealtime) — tope de 5 para no inundar la
+  // pantalla si hay muchas acumuladas de una sesión larga sin abrir.
+  function spawnToastsIniciales(){
+    const pendientes = state.notificaciones.filter(n => !n.leida);
+    pendientes.slice(0, 5).forEach((n, i) => setTimeout(() => spawnNotifToast(n), i * 220));
+  }
 
   document.getElementById("notifMarkAllReadBtn").addEventListener("click", async () => {
     const unread = state.notificaciones.filter(n => !n.leida);
@@ -3398,10 +3720,22 @@
   });
 
   notifConfigBtn.addEventListener("click", () => {
-    const p = state.preferencias || { canal_inapp: true, canal_email: true, dias_por_etapa: DIAS_ETAPA_DEFAULT };
+    const p = state.preferencias || {
+      canal_inapp: true, canal_email: true, canal_toast: true, dias_por_etapa: DIAS_ETAPA_DEFAULT,
+      tipos_mute: [], abc_mute: [], ajuste_dias_abc: {}, compartir_con_otro: false,
+    };
     cfgCanalInapp.checked = p.canal_inapp;
     cfgCanalEmail.checked = p.canal_email;
+    cfgCanalToast.checked = p.canal_toast !== false;
     renderCfgDiasPorEtapa(p.dias_por_etapa);
+    renderCfgTipos(p.tipos_mute);
+    renderCfgAbc(p.abc_mute);
+    const ajuste = p.ajuste_dias_abc || {};
+    document.getElementById("cfg_ajuste_A").value = ajuste.A || 0;
+    document.getElementById("cfg_ajuste_B").value = ajuste.B || 0;
+    document.getElementById("cfg_ajuste_C").value = ajuste.C || 0;
+    cfgCompartirField.style.display = state.mode === "joaquin" ? "" : "none";
+    if(state.mode === "joaquin") cfgCompartirConOtro.checked = !!p.compartir_con_otro;
     notifConfigOverlay.classList.add("open");
   });
   document.getElementById("notifConfigCloseBtn").addEventListener("click", () => notifConfigOverlay.classList.remove("open"));
@@ -3414,12 +3748,27 @@
       const el = document.getElementById(`cfg_dias_${c.key}`);
       dias_por_etapa[c.key] = Math.min(60, Math.max(1, Number(el.value) || DIAS_ETAPA_DEFAULT[c.key]));
     });
+    const tipos_mute = [...cfgTipos.querySelectorAll("[data-cfg-tipo]")]
+      .filter(el => !el.checked).map(el => el.dataset.cfgTipo);
+    const abc_mute = [...cfgAbc.querySelectorAll("[data-cfg-abc]")]
+      .filter(el => !el.checked).map(el => el.dataset.cfgAbc);
+    const clampAjuste = (v) => Math.max(-30, Math.min(30, Number(v) || 0));
+    const ajuste_dias_abc = {
+      A: clampAjuste(document.getElementById("cfg_ajuste_A").value),
+      B: clampAjuste(document.getElementById("cfg_ajuste_B").value),
+      C: clampAjuste(document.getElementById("cfg_ajuste_C").value),
+    };
     const payload = {
       email: state.userRow.email,
       canal_inapp: cfgCanalInapp.checked,
       canal_email: cfgCanalEmail.checked,
+      canal_toast: cfgCanalToast.checked,
       dias_por_etapa,
+      tipos_mute,
+      abc_mute,
+      ajuste_dias_abc,
     };
+    if(state.mode === "joaquin") payload.compartir_con_otro = cfgCompartirConOtro.checked;
     const { data, error } = await supa.from("preferencias_notificacion").upsert(payload).select().single();
     if(error){ console.error(error); toast("No se pudo guardar la configuración"); return; }
     state.preferencias = data;
@@ -3563,6 +3912,7 @@
     { id:"bajas",              title:"Bajas",                    kind:"stat",           x:0, y:4, shape:"sm" },
     { id:"pedido_grande",      title:"Pedido más grande",       kind:"stat",           x:3, y:4, shape:"sm" },
     { id:"por_rubro_ventas",   title:"Rubros con más ventas",   kind:"bar_rubro_ventas", x:6, y:7, shape:"lg" },
+    { id:"por_abc",            title:"Leads por prioridad ABC", kind:"bar_abc",          x:9, y:7, shape:"lg" },
     { id:"top_clientes",       title:"Top clientes",            kind:"ranking",        x:0, y:6, shape:"tall" },
     { id:"clientes_frecuentes",title:"Clientes más frecuentes", kind:"ranking",        x:3, y:6, shape:"tall" },
   ];
@@ -3653,7 +4003,12 @@
       porRubroVentas[l.rubro] += Number(l.ticket) || 0;
     });
 
-    return { ventas, avance, crecimiento, tasaCierre, antiguedad, porEtapa, porRubro, nuevosEsteMes, nuevosMesAnterior, bajasCount, bajasPct, porRubroVentas };
+    // "sin" agrupa leads activos sin clasificación ABC cargada todavía (carga
+    // manual, ver migración 20260909000007) — no se descartan del reporte.
+    const porAbc = { A: 0, B: 0, C: 0, sin: 0 };
+    activos.forEach(l => { porAbc[l.clasificacion_abc || "sin"]++; });
+
+    return { ventas, avance, crecimiento, tasaCierre, antiguedad, porEtapa, porRubro, nuevosEsteMes, nuevosMesAnterior, bajasCount, bajasPct, porRubroVentas, porAbc };
   }
 
   // Estadísticas de Cartera (clientes + pedidos_cliente) para Reportes: no
@@ -3836,6 +4191,39 @@
     });
   }
 
+  // Mismos colores que .abc-badge (A=danger, B=warn, C=positive) para que el
+  // gráfico y las etiquetas ABC del resto de la app se lean como un sistema.
+  const ABC_CHART_COLORS = { A: "#ff8078", B: "#f4d24e", C: "#5fe083", sin: "#8b8b92" };
+  const ABC_ORDER = ["A", "B", "C", "sin"];
+  const ABC_LABELS = { A: "A", B: "B", C: "C", sin: "Sin clasificar" };
+
+  function renderBarAbcChart(canvasId, porAbc){
+    destroyChart(canvasId);
+    const canvas = document.getElementById(canvasId);
+    if(!canvas || typeof Chart === "undefined") return;
+    state.chartInstances[canvasId] = new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels: ABC_ORDER.map(k => ABC_LABELS[k]),
+        datasets: [{
+          data: ABC_ORDER.map(k => porAbc[k] || 0),
+          backgroundColor: ABC_ORDER.map(k => ABC_CHART_COLORS[k]),
+          borderRadius: 4,
+          maxBarThickness: 28,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: "#a9a9b0", font: { size: 10 } }, grid: { display: false } },
+          y: { beginAtZero: true, ticks: { color: "#a9a9b0", precision: 0 }, grid: { color: "#2a2a2e" } },
+        },
+      },
+    });
+  }
+
   async function loadReporteLayouts(){
     const { data, error } = await supa.from("reporte_layout").select("*").eq("email", state.userRow.email);
     if(error){ console.error(error); return; }
@@ -3964,10 +4352,15 @@
       // visibles (dejaría huecos donde "estuvo" un oculto) — se estacionan
       // bien abajo, lejos de la zona compacta, hasta que se los remueva del
       // grid (más abajo) o alguien los reactive desde el desplegable.
+      // Un widget agregado después de que el usuario ya tenía un layout
+      // guardado (isCurrent true) no tiene entrada en savedItems — cae acá en
+      // gs-auto-position en vez de en def.x/def.y fijos, para no competir por
+      // el mismo lugar que un widget ya reacomodado a mano.
+      const hasSavedPos = isCurrent && !!savedItems[def.id];
       const posAttrs = !isCurrent && hiddenSet.has(def.id)
         ? `gs-x="0" gs-y="100"`
-        : isCurrent
-          ? `gs-x="${Number.isFinite(pos.x) ? pos.x : def.x}" gs-y="${Number.isFinite(pos.y) ? pos.y : def.y}"`
+        : hasSavedPos
+          ? `gs-x="${pos.x}" gs-y="${pos.y}"`
           : `gs-auto-position="true"`;
       return `
       <div class="grid-stack-item" gs-id="${def.id}" ${posAttrs} gs-w="${shape.w}" gs-h="${shape.h}">
@@ -4079,6 +4472,7 @@
       if(def.kind === "bar_etapa") renderBarEtapaChart(`chart_${reporte}_${def.id}`, metrics.porEtapa);
       if(def.kind === "bar_rubro") renderBarRubroChart(`chart_${reporte}_${def.id}`, metrics.porRubro);
       if(def.kind === "bar_rubro_ventas") renderBarRubroVentasChart(`chart_${reporte}_${def.id}`, metrics.porRubroVentas);
+      if(def.kind === "bar_abc") renderBarAbcChart(`chart_${reporte}_${def.id}`, metrics.porAbc);
     });
   }
 
@@ -4122,6 +4516,9 @@
           chart.data.datasets[0].backgroundColor = keys.map((_, i) => SERIES_COLORS[i % SERIES_COLORS.length]);
           chart.update();
         }
+      } else if(def.kind === "bar_abc"){
+        const chart = state.chartInstances[`chart_${reporte}_${def.id}`];
+        if(chart){ chart.data.datasets[0].data = ABC_ORDER.map(k => metrics.porAbc[k] || 0); chart.update(); }
       }
     });
   }
@@ -4820,18 +5217,27 @@
       .subscribe();
   }
 
+  // Con la policy de bandeja compartida (ver migración
+  // 20260914000001), Tristán ahora también recibe por realtime las filas de
+  // Joaquín cuando éste activó compartir_con_otro — hay que separarlas de
+  // las propias, si no se mezclan en el mismo state.notificaciones (badge y
+  // carteles incluidos) como si fueran de Tristán.
   function handleNotifRealtime(payload){
+    const row = payload.new || payload.old;
+    const esPropia = row.destinatario_email === (state.userRow && state.userRow.email);
+    const esCompartida = !esPropia && row.destinatario_email === state.notifEmailCompartido;
+    if(!esPropia && !esCompartida) return;
+
+    const lista = esPropia ? "notificaciones" : "notificacionesCompartidas";
     if(payload.eventType === "DELETE"){
-      state.notificaciones = state.notificaciones.filter(n => n.id !== payload.old.id);
-      renderNotifBadge();
-      if(notifOverlay.classList.contains("open")) renderNotifList();
-      return;
+      state[lista] = state[lista].filter(n => n.id !== payload.old.id);
+    } else {
+      const idx = state[lista].findIndex(n => n.id === payload.new.id);
+      if(idx > -1) state[lista][idx] = payload.new; else state[lista].unshift(payload.new);
+      if(esPropia && payload.eventType === "INSERT") spawnNotifToast(payload.new);
     }
-    const row = payload.new;
-    const idx = state.notificaciones.findIndex(n => n.id === row.id);
-    if(idx > -1) state.notificaciones[idx] = row; else state.notificaciones.unshift(row);
-    renderNotifBadge();
-    if(notifOverlay.classList.contains("open")) renderNotifList();
+    if(esPropia) renderNotifBadge();
+    if(notifOverlay.classList.contains("open") && state.notifModo === (esPropia ? "propia" : "compartida")) renderNotifList();
   }
 
   function handleRecordatorioRealtime(payload){
@@ -5037,6 +5443,17 @@
     state.preferencias = data || { email, canal_inapp: true, canal_email: true, dias_por_etapa: DIAS_ETAPA_DEFAULT };
   }
 
+  // Solo Tristán: notif_email_compartido() (RPC security definer, ver
+  // migración 20260914000001) devuelve el email de Joaquín únicamente si él
+  // activó "compartir_con_otro" — así Tristán sabe si mostrar el toggle "Ver
+  // las de Joaquín" sin necesitar leer la fila de preferencias de Joaquín.
+  async function loadEmailCompartido(){
+    const { data, error } = await supa.rpc("notif_email_compartido");
+    if(error){ console.error(error); return; }
+    state.notifEmailCompartido = data || null;
+    if(!state.notifEmailCompartido) state.notifModo = "propia";
+  }
+
   async function fetchHistory(leadId){
     const { data, error } = await supa
       .from("lead_history")
@@ -5082,11 +5499,12 @@
     userBadge.title = data.email;
 
     const loads = [loadLeads(), loadClientes(), loadUltimoPedidoPorCliente(), loadTareas(), loadNotificaciones(), loadPreferencias(), loadReporteLayouts()];
-    if(state.mode === "tristan") loads.push(loadPrivados());
+    if(state.mode === "tristan"){ loads.push(loadPrivados()); loads.push(loadEmailCompartido()); }
     await Promise.all(loads);
     subscribeRealtime();
     state.activeMobileColumn = currentColumns()[0].key;
     render();
+    spawnToastsIniciales();
   }
 
   supa.auth.onAuthStateChange((_event, session) => { handleSession(session); });
