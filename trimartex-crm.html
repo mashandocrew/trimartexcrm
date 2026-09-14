@@ -260,6 +260,10 @@
     border-bottom: 1px solid var(--border-soft);
   }
   .cartera-filters::-webkit-scrollbar{ display:none; }
+  /* La bandeja de notificaciones reusa .cartera-filters (mismos pills), pero
+     vive dentro de un modal, no del header — siempre visible, sin el
+     display:none de base que los demás usos togglean por JS. */
+  .notif-filtros{ display:flex; padding: 0 0 10px; border-bottom:none; background:transparent; }
   /* .board es flex-row (para las columnas del pipeline); sin flex:1 acá, este
      wrap de una sola columna se encogía a lo ancho de su contenido en vez de
      ocupar el espacio disponible, dejando casi toda la pantalla en blanco a
@@ -1301,6 +1305,7 @@
       <button class="modal-close" id="notifCloseBtn"><svg viewBox="0 0 24 24" fill="none"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
     </div>
     <div class="modal-body">
+      <nav class="cartera-filters notif-filtros" id="notifFiltros"></nav>
       <div class="archive-list" id="notifList"></div>
     </div>
     <div class="modal-foot">
@@ -1556,6 +1561,7 @@
     historyCache: {},       // leadId -> lead_history[]
     novedadesCache: {},     // leadId -> lead_novedades[]
     notificaciones: [],     // bandeja propia (RLS ya filtra por destinatario)
+    notifFiltro: { perfil: "todos", abc: "todos" }, // perfil: "todos"|"jp"|"tristan" — abc: "todos"|"A"|"B"|"C"|"sin"
     preferencias: null,     // fila propia de preferencias_notificacion
     recordatoriosCache: {}, // leadId (compartido o privado) -> recordatorios[]
     pedidosCache: {},       // clienteId -> pedidos_cliente[] (historial completo, cargado al abrir el modal)
@@ -3200,12 +3206,61 @@
     notifBadge.textContent = n > 9 ? "9+" : String(n);
   }
 
+  // Perfil de una notificación: se deriva de a qué lead apunta (lead_id →
+  // pipeline compartido/JP, lead_privado_id → Gestión Privada de Tristán),
+  // sin agregar columna nueva — evita que perfil y lead_id/lead_privado_id
+  // puedan quedar inconsistentes entre sí.
+  function notifPerfil(n){
+    return n.lead_id ? "jp" : "tristan";
+  }
+
+  function leadDeNotif(n){
+    if(n.lead_id) return state.leads.find(l => l.id === n.lead_id);
+    if(n.lead_privado_id) return state.privados.find(l => l.id === n.lead_privado_id);
+    return null;
+  }
+
+  // "sin" agrupa notificaciones cuyo lead todavía no tiene clasificación ABC
+  // cargada (carga manual, ver migración 20260909000007) — nunca se pierden
+  // del filtro por quedar en un grupo sin nombre.
+  function notifAbc(n){
+    const lead = leadDeNotif(n);
+    return (lead && lead.clasificacion_abc) || "sin";
+  }
+
+  const NOTIF_FILTRO_PERFIL = [{key:"todos",label:"Todos"},{key:"jp",label:"JP"},{key:"tristan",label:"Tristán"}];
+  const NOTIF_FILTRO_ABC = [{key:"todos",label:"Todos"},{key:"A",label:"A"},{key:"B",label:"B"},{key:"C",label:"C"},{key:"sin",label:"Sin clasificar"}];
+
+  function notificacionesFiltradas(){
+    return state.notificaciones.filter(n =>
+      (state.notifFiltro.perfil === "todos" || notifPerfil(n) === state.notifFiltro.perfil) &&
+      (state.notifFiltro.abc === "todos" || notifAbc(n) === state.notifFiltro.abc)
+    );
+  }
+
+  function renderNotifFiltros(){
+    const el = document.getElementById("notifFiltros");
+    if(!el) return;
+    el.innerHTML = `
+      ${NOTIF_FILTRO_PERFIL.map(f => `<button type="button" class="mobile-tab ${f.key === state.notifFiltro.perfil ? "active" : ""}" data-notif-perfil="${f.key}">${escapeHtml(f.label)}</button>`).join("")}
+      <span class="tareas-filter-sep"></span>
+      ${NOTIF_FILTRO_ABC.map(f => `<button type="button" class="mobile-tab ${f.key === state.notifFiltro.abc ? "active" : ""}" data-notif-abc="${f.key}">${escapeHtml(f.label)}</button>`).join("")}
+    `;
+    el.querySelectorAll("[data-notif-perfil]").forEach(btn => {
+      btn.addEventListener("click", () => { state.notifFiltro.perfil = btn.dataset.notifPerfil; renderNotifList(); });
+    });
+    el.querySelectorAll("[data-notif-abc]").forEach(btn => {
+      btn.addEventListener("click", () => { state.notifFiltro.abc = btn.dataset.notifAbc; renderNotifList(); });
+    });
+  }
+
   function renderNotifList(){
+    renderNotifFiltros();
     if(!canalInappActivo()){
       notifList.innerHTML = `<div class="archive-empty">Tenés las notificaciones dentro del CRM desactivadas. Podés reactivarlas en el ícono de configuración (⚙).</div>`;
       return;
     }
-    const list = state.notificaciones;
+    const list = notificacionesFiltradas();
     notifList.innerHTML = list.length
       ? list.map(n => `
         <div class="archive-row notif-row ${n.leida ? "" : "notif-unread"}" data-id="${n.id}">
@@ -3216,7 +3271,7 @@
           </div>
         </div>
       `).join("")
-      : `<div class="archive-empty">No tenés notificaciones.</div>`;
+      : `<div class="archive-empty">${state.notificaciones.length ? "Ninguna notificación coincide con el filtro." : "No tenés notificaciones."}</div>`;
     notifList.querySelectorAll(".notif-row").forEach(row => {
       row.addEventListener("click", () => {
         const n = state.notificaciones.find(x => x.id === row.dataset.id);
@@ -3429,6 +3484,7 @@
     { id:"bajas",              title:"Bajas",                    kind:"stat",           x:0, y:4, shape:"sm" },
     { id:"pedido_grande",      title:"Pedido más grande",       kind:"stat",           x:3, y:4, shape:"sm" },
     { id:"por_rubro_ventas",   title:"Rubros con más ventas",   kind:"bar_rubro_ventas", x:6, y:7, shape:"lg" },
+    { id:"por_abc",            title:"Leads por prioridad ABC", kind:"bar_abc",          x:9, y:7, shape:"lg" },
     { id:"top_clientes",       title:"Top clientes",            kind:"ranking",        x:0, y:6, shape:"tall" },
     { id:"clientes_frecuentes",title:"Clientes más frecuentes", kind:"ranking",        x:3, y:6, shape:"tall" },
   ];
@@ -3519,7 +3575,12 @@
       porRubroVentas[l.rubro] += Number(l.ticket) || 0;
     });
 
-    return { ventas, avance, crecimiento, tasaCierre, antiguedad, porEtapa, porRubro, nuevosEsteMes, nuevosMesAnterior, bajasCount, bajasPct, porRubroVentas };
+    // "sin" agrupa leads activos sin clasificación ABC cargada todavía (carga
+    // manual, ver migración 20260909000007) — no se descartan del reporte.
+    const porAbc = { A: 0, B: 0, C: 0, sin: 0 };
+    activos.forEach(l => { porAbc[l.clasificacion_abc || "sin"]++; });
+
+    return { ventas, avance, crecimiento, tasaCierre, antiguedad, porEtapa, porRubro, nuevosEsteMes, nuevosMesAnterior, bajasCount, bajasPct, porRubroVentas, porAbc };
   }
 
   // Estadísticas de Cartera (clientes + pedidos_cliente) para Reportes: no
@@ -3702,6 +3763,39 @@
     });
   }
 
+  // Mismos colores que .abc-badge (A=danger, B=warn, C=positive) para que el
+  // gráfico y las etiquetas ABC del resto de la app se lean como un sistema.
+  const ABC_CHART_COLORS = { A: "#ff8078", B: "#f4d24e", C: "#5fe083", sin: "#8b8b92" };
+  const ABC_ORDER = ["A", "B", "C", "sin"];
+  const ABC_LABELS = { A: "A", B: "B", C: "C", sin: "Sin clasificar" };
+
+  function renderBarAbcChart(canvasId, porAbc){
+    destroyChart(canvasId);
+    const canvas = document.getElementById(canvasId);
+    if(!canvas || typeof Chart === "undefined") return;
+    state.chartInstances[canvasId] = new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels: ABC_ORDER.map(k => ABC_LABELS[k]),
+        datasets: [{
+          data: ABC_ORDER.map(k => porAbc[k] || 0),
+          backgroundColor: ABC_ORDER.map(k => ABC_CHART_COLORS[k]),
+          borderRadius: 4,
+          maxBarThickness: 28,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: "#a9a9b0", font: { size: 10 } }, grid: { display: false } },
+          y: { beginAtZero: true, ticks: { color: "#a9a9b0", precision: 0 }, grid: { color: "#2a2a2e" } },
+        },
+      },
+    });
+  }
+
   async function loadReporteLayouts(){
     const { data, error } = await supa.from("reporte_layout").select("*").eq("email", state.userRow.email);
     if(error){ console.error(error); return; }
@@ -3830,10 +3924,15 @@
       // visibles (dejaría huecos donde "estuvo" un oculto) — se estacionan
       // bien abajo, lejos de la zona compacta, hasta que se los remueva del
       // grid (más abajo) o alguien los reactive desde el desplegable.
+      // Un widget agregado después de que el usuario ya tenía un layout
+      // guardado (isCurrent true) no tiene entrada en savedItems — cae acá en
+      // gs-auto-position en vez de en def.x/def.y fijos, para no competir por
+      // el mismo lugar que un widget ya reacomodado a mano.
+      const hasSavedPos = isCurrent && !!savedItems[def.id];
       const posAttrs = !isCurrent && hiddenSet.has(def.id)
         ? `gs-x="0" gs-y="100"`
-        : isCurrent
-          ? `gs-x="${Number.isFinite(pos.x) ? pos.x : def.x}" gs-y="${Number.isFinite(pos.y) ? pos.y : def.y}"`
+        : hasSavedPos
+          ? `gs-x="${pos.x}" gs-y="${pos.y}"`
           : `gs-auto-position="true"`;
       return `
       <div class="grid-stack-item" gs-id="${def.id}" ${posAttrs} gs-w="${shape.w}" gs-h="${shape.h}">
@@ -3945,6 +4044,7 @@
       if(def.kind === "bar_etapa") renderBarEtapaChart(`chart_${reporte}_${def.id}`, metrics.porEtapa);
       if(def.kind === "bar_rubro") renderBarRubroChart(`chart_${reporte}_${def.id}`, metrics.porRubro);
       if(def.kind === "bar_rubro_ventas") renderBarRubroVentasChart(`chart_${reporte}_${def.id}`, metrics.porRubroVentas);
+      if(def.kind === "bar_abc") renderBarAbcChart(`chart_${reporte}_${def.id}`, metrics.porAbc);
     });
   }
 
@@ -3988,6 +4088,9 @@
           chart.data.datasets[0].backgroundColor = keys.map((_, i) => SERIES_COLORS[i % SERIES_COLORS.length]);
           chart.update();
         }
+      } else if(def.kind === "bar_abc"){
+        const chart = state.chartInstances[`chart_${reporte}_${def.id}`];
+        if(chart){ chart.data.datasets[0].data = ABC_ORDER.map(k => metrics.porAbc[k] || 0); chart.update(); }
       }
     });
   }
