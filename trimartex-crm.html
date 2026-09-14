@@ -2814,9 +2814,14 @@
     // se usa siempre el pie completo (Cancelar / Crear lead), aunque quien
     // esté creando sea Tristán en modo cliente.
     let footHtml = "";
+    // Tristán puede deshacer un lead que él mismo mandó al compartido mientras
+    // siga en "Leads Tristán", es decir, antes de que Joaquín lo trabaje.
+    const puedeDeshacer = isClientMode && !isNew && !!lead
+      && lead.etapa === "leads_tristan" && lead.created_by === state.session.user.id;
     if(isClientMode && !isNew){
       if(!isContactadoLocked){
-        footHtml = `<button class="btn btn-ghost" id="cancelBtn">Cerrar</button>
+        footHtml = `${puedeDeshacer ? `<button class="btn btn-danger" id="deleteBtn">Eliminar</button>` : ""}
+                    <button class="btn btn-ghost" id="cancelBtn">Cerrar</button>
                     <button class="btn btn-accent btn-full" id="saveBtn">Guardar cambios</button>`;
       } else {
         footHtml = `<button class="btn btn-ghost btn-full" id="cancelBtn">Cerrar</button>`;
