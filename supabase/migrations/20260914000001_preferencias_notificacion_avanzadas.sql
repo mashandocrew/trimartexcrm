@@ -220,6 +220,15 @@ revoke execute on function public.generar_notificaciones() from public, anon, au
 -- compartir_lead_tristan(): el aviso a Joaquín de "Tristán compartió un
 -- lead" es tipo lead_compartido — si Joaquín lo silenció, respeta lo mismo
 -- que generar_notificaciones() para los demás tipos.
+--
+-- OJO: esta función ya había sido tocada en producción por la migración
+-- 20260914201318_contacto2_y_quitar_de_cartera (aplicada directo a Supabase,
+-- reconstruida acá como archivo aparte para que el repo deje de estar
+-- desincronizado — ver ese archivo) para copiar también contacto2_nombre,
+-- contacto2_telefono y clasificacion_abc al compartir un lead. Este
+-- create or replace parte de ESA versión, no de la original de
+-- 20260909000004_notificaciones.sql — si se hiciera al revés se perdería
+-- esos tres campos en cada lead que Tristán comparta de acá en más.
 create or replace function public.compartir_lead_tristan(p_lead_id uuid)
 returns uuid
 language plpgsql
@@ -237,14 +246,16 @@ begin
   end if;
 
   insert into public.leads (
-    empresa, contacto, telefono, rubro, ticket, fuente, fecha_contacto,
-    resultado, notas, etapa, archived, cierre, recontacto_active,
-    recontacto_stage, recontacto_next_date, created_by
+    empresa, contacto, telefono, contacto2_nombre, contacto2_telefono, rubro,
+    ticket, fuente, fecha_contacto, resultado, notas, etapa, archived, cierre,
+    recontacto_active, recontacto_stage, recontacto_next_date,
+    clasificacion_abc, created_by
   )
   select
-    empresa, contacto, telefono, rubro, ticket, fuente, fecha_contacto,
-    resultado, notas, 'leads_tristan', archived, cierre, recontacto_active,
-    recontacto_stage, recontacto_next_date, created_by
+    empresa, contacto, telefono, contacto2_nombre, contacto2_telefono, rubro,
+    ticket, fuente, fecha_contacto, resultado, notas, 'leads_tristan', archived, cierre,
+    recontacto_active, recontacto_stage, recontacto_next_date,
+    clasificacion_abc, created_by
   from public.leads_privados_tristan
   where id = p_lead_id
     and trashed_at is null
