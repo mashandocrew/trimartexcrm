@@ -792,6 +792,10 @@
     cursor:pointer; display:flex; align-items:center; gap:5px;
   }
   .notif-toast-dismiss-all:hover{ color:var(--text); }
+  /* display:flex de arriba pisaba el [hidden]{display:none} del navegador
+     (misma especificidad, pero esta regla de autor gana) — el botón nunca
+     desaparecía aunque el JS le pusiera el atributo hidden. */
+  .notif-toast-dismiss-all[hidden]{ display:none; }
 
   @media (max-width: 860px){
     .board{ display:block; padding: 12px 12px 20px; }
