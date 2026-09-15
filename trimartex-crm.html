@@ -1746,6 +1746,7 @@
     notifModo: "propia",       // "propia" | "compartida" — solo tristan puede pasar a "compartida"
     notifEmailCompartido: null, // email de Joaquín, solo si él activó compartir_con_otro (si no, null)
     notificacionesCompartidas: [], // bandeja de Joaquín, solo lectura, cargada bajo demanda
+    toastsInicialesDisparados: false, // los carteles pendientes solo se encadenan la primera vez que entrás, no cada vez que Supabase revalida la sesión (volver de otra pestaña, refresh de token)
     preferencias: null,     // fila propia de preferencias_notificacion
     recordatoriosCache: {}, // leadId (compartido o privado) -> recordatorios[]
     pedidosCache: {},       // clienteId -> pedidos_cliente[] (historial completo, cargado al abrir el modal)
@@ -5508,7 +5509,14 @@
     subscribeRealtime();
     state.activeMobileColumn = currentColumns()[0].key;
     render();
-    spawnToastsIniciales();
+    // handleSession() se vuelve a disparar cada vez que Supabase revalida la
+    // sesión (volver a la pestaña, refresh de token) — sin esta guarda, los
+    // carteles de notificaciones pendientes se repetían cada vez que
+    // cambiabas de pestaña y volvías, no solo la primera vez que entrás.
+    if(!state.toastsInicialesDisparados){
+      state.toastsInicialesDisparados = true;
+      spawnToastsIniciales();
+    }
   }
 
   supa.auth.onAuthStateChange((_event, session) => { handleSession(session); });
