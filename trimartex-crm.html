@@ -797,6 +797,23 @@
      desaparecía aunque el JS le pusiera el atributo hidden. */
   .notif-toast-dismiss-all[hidden]{ display:none; }
 
+  #undoBar{
+    position: fixed; left:50%; bottom: 22px; transform: translateX(-50%) translateY(20px);
+    width: min(460px, calc(100% - 24px));
+    display:flex; align-items:center; gap:12px; overflow:hidden;
+    background:#1f1f23; border:1px solid var(--border); border-radius:12px;
+    padding: 10px 10px 10px 16px; box-shadow: 0 12px 30px rgba(0,0,0,0.4);
+    z-index: 310; opacity:0; pointer-events:none; transition: opacity .25s ease, transform .25s ease;
+  }
+  #undoBar.show{ opacity:1; pointer-events:auto; transform: translateX(-50%) translateY(0); }
+  #undoText{ flex:1 1 auto; font-size:13.5px; color: var(--text); font-variant-numeric: tabular-nums; }
+  #undoBtn{ flex:0 0 auto; white-space:nowrap; }
+  #undoProgress{ position:absolute; left:0; bottom:0; width:100%; height:3px; background: var(--accent); transform-origin:left; }
+  @media (max-width: 520px){
+    #undoBar{ bottom: max(12px, env(safe-area-inset-bottom)); flex-wrap:wrap; padding:12px; }
+    #undoBtn{ width:100%; padding:12px; justify-content:center; }
+  }
+
   @media (max-width: 860px){
     .board{ display:block; padding: 12px 12px 20px; }
     .column{ display:none; height:100%; border-radius: var(--radius-lg); flex-basis:auto; }
@@ -1571,6 +1588,11 @@
 </div>
 
 <div id="toast"></div>
+<div id="undoBar" role="status" aria-live="polite">
+  <span id="undoText"></span>
+  <button type="button" class="btn btn-accent" id="undoBtn">Devolver</button>
+  <span id="undoProgress"></span>
+</div>
 
 <div class="notif-toast-stack" id="notifToastStack" aria-live="polite">
   <button type="button" class="notif-toast-dismiss-all" id="notifToastDismissAll" hidden>
@@ -2931,18 +2953,28 @@
     // siga en "Leads Tristán", es decir, antes de que Joaquín lo trabaje.
     const puedeDeshacer = isClientMode && !isNew && !!lead
       && lead.etapa === "leads_tristan" && lead.created_by === state.session.user.id;
+    leadDeshacible = puedeDeshacer;
+    // "Devolver" saca el lead de Leads Tristán y lo vuelve a poner donde
+    // estaba (Cartera o Gestión Privada). Tristán con los suyos, Joaquín con todos.
+    const puedeDevolver = !state.privateMode && !isNew && !!lead && lead.etapa === "leads_tristan"
+      && (state.mode === "joaquin" || lead.created_by === state.session.user.id);
+    const devolverHtml = puedeDevolver
+      ? `<button class="btn btn-ghost" id="devolverBtn">↩ Devolver a ${origenDeLead(lead) === "cartera" ? "Cartera" : "Gestión Privada"}</button>`
+      : "";
     if(isClientMode && !isNew){
       if(!isContactadoLocked){
         footHtml = `${puedeDeshacer ? `<button class="btn btn-danger" id="deleteBtn">Eliminar</button>` : ""}
+                    ${devolverHtml}
                     <button class="btn btn-ghost" id="cancelBtn">Cerrar</button>
                     <button class="btn btn-accent btn-full" id="saveBtn">Guardar cambios</button>`;
       } else {
-        footHtml = `<button class="btn btn-ghost btn-full" id="cancelBtn">Cerrar</button>`;
+        footHtml = `${devolverHtml}<button class="btn btn-ghost btn-full" id="cancelBtn">Cerrar</button>`;
       }
     } else {
       footHtml = `
         ${!isNew ? `<button class="btn btn-danger" id="deleteBtn">Eliminar</button>` : ""}
         ${!isNew ? `<button class="btn btn-ghost" id="archiveActionBtn">Archivar</button>` : ""}
+        ${devolverHtml}
         ${state.privateMode && !isNew ? `<button class="btn btn-accent" id="compartirBtn">Compartir con Joaquín</button>` : ""}
         <span style="flex:1 1 auto"></span>
         <button class="btn btn-ghost" id="cancelBtn">Cancelar</button>
@@ -2979,6 +3011,23 @@
       toast("Lead compartido con Joaquín");
       closeLeadModal();
       render();
+    });
+    const devolverBtn = document.getElementById("devolverBtn");
+    if(devolverBtn) devolverBtn.addEventListener("click", async () => {
+      const lead = state.leads.find(l => l.id === state.editingId);
+      if(!lead) return;
+      const destinoLabel = origenDeLead(lead) === "cartera" ? "Cartera" : "la Gestión Privada de Tristán";
+      if(!confirm(`¿Sacar "${lead.empresa}" de Leads Tristán y devolverlo a ${destinoLabel}?`)) return;
+      devolverBtn.disabled = true;
+      const { data, error } = await supa.rpc("devolver_lead_tristan", { p_lead_id: lead.id });
+      if(error){ console.error(error); devolverBtn.disabled = false; toast("No se pudo devolver el lead"); return; }
+      state.leads = state.leads.filter(l => l.id !== lead.id);
+      const origen = data || origenDeLead(lead);
+      if(origen === "cartera") await loadClientes();
+      else if(state.mode === "tristan") await loadPrivados();
+      closeLeadModal();
+      render();
+      toast(origen === "cartera" ? `${lead.empresa} volvió a Cartera` : `${lead.empresa} volvió a la Gestión Privada`);
     });
 
     leadOverlay.classList.add("open");
@@ -3232,17 +3281,79 @@
   }
 
   document.getElementById("cancelDeleteBtn").addEventListener("click", () => deleteConfirm.classList.remove("show"));
+  // Tristán, al eliminar un lead suyo de Leads Tristán: el lead va a la
+  // papelera en el acto y durante 40 s puede devolverlo a su origen (Cartera
+  // o Gestión Privada). Si no lo hace, simplemente queda en la papelera.
+  let leadDeshacible = false;
+  let undoPendiente = null;
+  const UNDO_SEGUNDOS = 40;
+  const undoBar = document.getElementById("undoBar");
+  const undoText = document.getElementById("undoText");
+  const undoBtn = document.getElementById("undoBtn");
+  const undoProgress = document.getElementById("undoProgress");
+
+  function origenDeLead(lead){
+    return lead.origen || (lead.fuente === "Cartera de clientes" ? "cartera" : "privado_tristan");
+  }
+
+  function cerrarUndo(){
+    if(!undoPendiente) return;
+    clearInterval(undoPendiente.tick);
+    undoPendiente = null;
+    undoBar.classList.remove("show");
+  }
+
+  function mostrarUndo(lead){
+    cerrarUndo();
+    const origen = origenDeLead(lead);
+    const vence = Date.now() + UNDO_SEGUNDOS * 1000;
+    undoBtn.textContent = origen === "cartera" ? "Devolver a Cartera" : "Devolver a Gestión Privada";
+    undoBtn.disabled = false;
+    const pintar = () => {
+      const s = Math.max(0, Math.ceil((vence - Date.now()) / 1000));
+      undoText.textContent = `${lead.empresa} eliminado · ${s} s para devolverlo`;
+      if(s === 0) cerrarUndo();
+    };
+    undoPendiente = { lead, origen, tick: setInterval(pintar, 250) };
+    pintar();
+    undoProgress.style.transition = "none";
+    undoProgress.style.transform = "scaleX(1)";
+    void undoProgress.offsetWidth;
+    undoProgress.style.transition = `transform ${UNDO_SEGUNDOS}s linear`;
+    undoProgress.style.transform = "scaleX(0)";
+    undoBar.classList.add("show");
+  }
+
+  undoBtn.addEventListener("click", async () => {
+    if(!undoPendiente || undoBtn.disabled) return;
+    const { lead } = undoPendiente;
+    undoBtn.disabled = true;
+    const { data, error } = await supa.rpc("devolver_lead_tristan", { p_lead_id: lead.id });
+    cerrarUndo();
+    if(error){
+      console.error(error);
+      toast(/venci/.test(error.message || "") ? "Se venció el tiempo: el lead quedó en la papelera" : "No se pudo devolver el lead");
+      return;
+    }
+    const origen = data || origenDeLead(lead);
+    if(origen === "cartera") await loadClientes(); else await loadPrivados();
+    render();
+    toast(origen === "cartera" ? `${lead.empresa} volvió a Cartera` : `${lead.empresa} volvió a tu Gestión Privada`);
+  });
+
   document.getElementById("confirmDeleteBtn").addEventListener("click", async () => {
     const list = activeLeads();
     const idx = list.findIndex(l => l.id === state.editingId);
     if(idx > -1){
-      const id = list[idx].id;
+      const lead = list[idx];
+      const deshacible = leadDeshacible;
       list.splice(idx, 1);
-      toast("Lead movido a la papelera");
+      if(!deshacible) toast("Lead movido a la papelera");
       closeLeadModal();
       render();
-      const { error } = await supa.from(activeTable()).update({ trashed_at: new Date().toISOString() }).eq("id", id);
-      if(error){ console.error(error); toast("No se pudo eliminar el lead"); }
+      const { error } = await supa.from(activeTable()).update({ trashed_at: new Date().toISOString() }).eq("id", lead.id);
+      if(error){ console.error(error); toast("No se pudo eliminar el lead"); return; }
+      if(deshacible) mostrarUndo(lead);
       return;
     }
     closeLeadModal();
@@ -4741,6 +4852,7 @@
       clasificacion_abc: c.clasificacion_abc || null,
       contacto2_nombre: c.contacto2_nombre || null,
       contacto2_telefono: c.contacto2_telefono || null,
+      ...(destino === "leads" ? { origen: "cartera", origen_cliente_id: c.id } : {}),
       created_by: state.session.user.id,
     };
 
