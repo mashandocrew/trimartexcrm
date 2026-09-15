@@ -3532,22 +3532,24 @@
   const cfgCompartirField = document.getElementById("f_cfg_compartir");
   const cfgCompartirConOtro = document.getElementById("cfg_compartir_con_otro");
 
-  // Todos los tipos de aviso que existen hoy — lead_compartido solo le llega
-  // a Joaquín (lo genera compartir_lead_tristan()), así que a Tristán no se
-  // le muestra ese checkbox: no tendría ningún efecto para él.
+  // Todos los tipos de aviso que existen hoy. lead_compartido solo le llega
+  // a Joaquín (compartir_lead_tristan()) y lead_devuelto solo a Tristán
+  // (devolver_lead_tristan()): a cada uno se le oculta el checkbox que no
+  // tendría ningún efecto para él.
   const TIPOS_AVISO = [
-    { key:"seguimiento_vencido", label:"Seguimiento vencido", soloJoaquin:false },
-    { key:"sin_movimiento", label:"Sin novedades", soloJoaquin:false },
-    { key:"recordatorio_manual", label:"Recordatorio manual", soloJoaquin:false },
-    { key:"recordatorio_automatico", label:"Recordatorio automático", soloJoaquin:false },
-    { key:"lead_compartido", label:"Lead compartido", soloJoaquin:true },
+    { key:"seguimiento_vencido", label:"Seguimiento vencido", solo:null },
+    { key:"sin_movimiento", label:"Sin novedades", solo:null },
+    { key:"recordatorio_manual", label:"Recordatorio manual", solo:null },
+    { key:"recordatorio_automatico", label:"Recordatorio automático", solo:null },
+    { key:"lead_compartido", label:"Lead compartido", solo:"joaquin" },
+    { key:"lead_devuelto", label:"Lead devuelto por Joaquín", solo:"tristan" },
   ];
   const ABC_AVISO = [{key:"A",label:"A"},{key:"B",label:"B"},{key:"C",label:"C"},{key:"sin",label:"Sin clasificar"}];
 
   function renderCfgTipos(muted){
     const mutedSet = new Set(muted || []);
     cfgTipos.innerHTML = TIPOS_AVISO
-      .filter(t => !t.soloJoaquin || state.mode === "joaquin")
+      .filter(t => !t.solo || state.mode === t.solo)
       .map(t => `<label><input type="checkbox" data-cfg-tipo="${t.key}" ${mutedSet.has(t.key) ? "" : "checked"}> ${escapeHtml(t.label)}</label>`)
       .join("");
   }
@@ -3750,6 +3752,7 @@
   // seguimiento), así que usa el acento de la app en vez de un color ABC.
   function notifToastIcono(n){
     if(n.tipo === "lead_compartido") return { letra:"→", claseAbc:"", style:"background:var(--accent-soft);color:var(--accent);" };
+    if(n.tipo === "lead_devuelto") return { letra:"←", claseAbc:"", style:"background:var(--accent-soft);color:var(--accent);" };
     const abc = notifAbc(n);
     const claseAbc = abc === "A" ? "abc-a" : abc === "B" ? "abc-b" : abc === "C" ? "abc-c" : "";
     return { letra: abc === "sin" ? "—" : abc, claseAbc, style:"" };
