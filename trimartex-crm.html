@@ -1694,6 +1694,12 @@
     return d !== 0 ? d : (new Date(a.created_at) - new Date(b.created_at));
   }
 
+  const ETAPA_LABELS = Object.assign(
+    { cerrado: "Cerrado" },
+    ...COLUMNS.map(c => ({ [c.key]: c.label }))
+  );
+  function etapaLabel(key){ return ETAPA_LABELS[key] || key || ""; }
+
   const RECONTACTO_STAGES = Array.from({length:8}, (_,i) => ({
     key: "r" + (i+1), label: "Recontacto " + (i+1), color: "#0a84ff"
   }));
@@ -2814,8 +2820,12 @@
     filtrosBtn.style.display = (isReportes || isTareas) ? "none" : "";
     renderFiltrosBadge(); // el contexto (lead/cliente) depende de la página — se re-evalúa en cada render, no solo al aplicar/limpiar
     newLeadBtn.style.display = (!isCartera && (state.mode === "joaquin" || isPrivate) && state.page === "pipeline") ? "flex" : "none";
-    archiveBtn.style.display = (!isCartera && !isReportes && !isTareas && (state.mode === "joaquin" || isPrivate)) ? "flex" : "none";
-    papeleraBtn.style.display = (!isCartera && !isReportes && !isTareas && (state.mode === "joaquin" || isPrivate)) ? "flex" : "none";
+    // Archivo y papelera ya no son exclusivos de Joaquín: Tristán también
+    // archiva y elimina dentro de su zona de escritura. Las listas de adentro
+    // solo muestran los leads que el usuario puede tocar (ver renderArchiveList
+    // y renderPapeleraList).
+    archiveBtn.style.display = (!isCartera && !isReportes && !isTareas) ? "flex" : "none";
+    papeleraBtn.style.display = (!isCartera && !isReportes && !isTareas) ? "flex" : "none";
     newClienteBtn.style.display = isCartera ? "flex" : "none";
     newTareaBtn.style.display = isTareas ? "flex" : "none";
     contactadosToggleBtn.style.display = (state.mode === "tristan" && !isPrivate && !isReportes && !isTareas) ? "" : "none";
@@ -2995,24 +3005,24 @@
     state.editingId = id || null;
     newLeadEtapa = targetEtapa || "nuevo";
     deleteConfirm.classList.remove("show");
-    // En su Gestión Privada, Tristán tiene edición completa (es dueño de esos
-    // leads) — el modo restringido de "cliente" solo aplica al pipeline
-    // compartido de Joaquín.
-    const isClientMode = state.mode === "tristan" && !state.privateMode;
     const isNew = !id;
     const lead = id ? activeLeads().find(l => l.id === id) : null;
-    // Tristán no tiene ningún permiso de edición sobre leads que Joaquín
-    // todavía no movió más allá de "Contactado" — esa etapa es enteramente
-    // suya. Tristán solo puede consultarlos (vía el toggle "Contactados").
-    const isContactadoLocked = isClientMode && !isNew && !!lead && lead.etapa === "contactado";
+    // Un único criterio de permiso (ver el bloque "Permisos"): o se puede
+    // editar todo el lead, o es solo lectura. Ya no existe el viejo "modo
+    // cliente" que le dejaba a Tristán únicamente Resultado/Notas/Fecha:
+    // dentro de su zona de escritura tiene control completo, igual que
+    // Joaquín; fuera de ella no toca nada.
+    const puedeEditar = puedeEditarLead(lead);
+    const soloLectura = !isNew && !puedeEditar;
 
     modalTitle.textContent = isNew
-      ? (newLeadEtapa === "nuevo" ? "Nuevo lead" : `Nuevo lead — ${(COLUMNS.find(c => c.key === newLeadEtapa) || {}).label || ""}`)
-      : (isClientMode ? "Detalle del lead" : "Editar lead");
-    clientNote.style.display = (isClientMode && !isNew) ? "flex" : "none";
-    document.getElementById("clientNoteText").innerHTML = isContactadoLocked
-      ? "Este lead todavía está en la etapa <b>Contactado</b>, a cargo de Joaquín. Solo podés consultarlo, no editarlo."
-      : "Modo Tristán: solo podés editar <b>Resultado</b>, <b>Notas</b>, <b>Fecha de contacto</b>" + (lead && lead.etapa === "seguimiento" ? " y <b>Recontacto</b>" : "") + " de este lead.";
+      ? (newLeadEtapa === "nuevo" ? "Nuevo lead" : `Nuevo lead — ${etapaLabel(newLeadEtapa)}`)
+      : (soloLectura ? "Detalle del lead" : "Editar lead");
+    clientNote.style.display = soloLectura ? "flex" : "none";
+    if(soloLectura){
+      document.getElementById("clientNoteText").innerHTML =
+        `Este lead está en la etapa <b>${escapeHtml(etapaLabel(lead && lead.etapa))}</b>, a cargo de Joaquín. Solo podés consultarlo.`;
+    }
 
     fields.empresa.value = lead ? lead.empresa : "";
     fields.contacto.value = lead ? lead.contacto : "";
@@ -3031,18 +3041,13 @@
     fields.notas.value = lead ? lead.notas : "";
     fieldWraps.empresa.classList.remove("invalid");
 
-    // El modo restringido de "cliente" (solo Resultado/Notas/Fecha editables)
-    // rige exclusivamente al editar un lead ya existente — al crear uno
-    // nuevo, Tristán completa el formulario igual que Joaquín.
-    const clientEditable = ["resultado", "notas", "fecha"];
-    Object.keys(fields).forEach(key => {
-      const lockedForClient = isClientMode && !isNew && (isContactadoLocked || !clientEditable.includes(key));
-      fields[key].disabled = lockedForClient;
-    });
+    // Todos los campos se bloquean o se liberan juntos. Ni la clasificación
+    // ABC ni las Notas dependen ya de la etapa: se editan en cualquiera.
+    Object.keys(fields).forEach(key => { fields[key].disabled = soloLectura; });
     leadContacto2.load(lead && lead.contacto2_nombre, lead && lead.contacto2_telefono);
-    leadContacto2.setLocked(isClientMode && !isNew);
+    leadContacto2.setLocked(soloLectura);
 
-    renderRecontactoBlock(lead, isClientMode);
+    renderRecontactoBlock(lead, soloLectura);
     // lead_history y lead_novedades referencian leads(id), no
     // leads_privados_tristan(id) — no aplican a un lead que todavía no se compartió.
     if(!state.privateMode){
@@ -3066,14 +3071,16 @@
       recordatoriosField.style.display = "none";
     }
 
-    // Foot buttons. El pie restringido de "cliente" (Cerrar / Guardar
-    // cambios) es solo para editar un lead existente — al crear uno nuevo
-    // se usa siempre el pie completo (Cancelar / Crear lead), aunque quien
-    // esté creando sea Tristán en modo cliente.
+    // Barra de acciones. Es una sola para todos los que pueden editar el lead
+    // — Joaquín en la cartera, Tristán en su zona de escritura y Tristán en
+    // su Gestión Privada ven exactamente los mismos botones:
+    //   Eliminar (izquierda) · Volver / Devolver (centro) · Archivar (derecha)
+    // En solo lectura queda únicamente "Cerrar".
     let footHtml = "";
     // Tristán puede deshacer un lead que él mismo mandó al compartido mientras
     // siga en "Leads Tristán", es decir, antes de que Joaquín lo trabaje.
-    const puedeDeshacer = isClientMode && !isNew && !!lead
+    // (Controla la barra de 40 s post-eliminación, no el botón Eliminar.)
+    const puedeDeshacer = state.mode === "tristan" && !state.privateMode && !isNew && !!lead
       && lead.etapa === "leads_tristan" && lead.created_by === state.session.user.id;
     leadDeshacible = puedeDeshacer;
     // "Devolver" saca el lead de Leads Tristán y lo vuelve a poner donde
@@ -3083,22 +3090,26 @@
     const devolverHtml = puedeDevolver
       ? `<button class="btn btn-ghost" id="devolverBtn">↩ Devolver a ${origenDeLead(lead) === "cartera" ? "Cartera" : "Gestión Privada"}</button>`
       : "";
-    if(isClientMode && !isNew){
-      if(!isContactadoLocked){
-        footHtml = `${puedeDeshacer ? `<button class="btn btn-danger" id="deleteBtn">Eliminar</button>` : ""}
-                    ${devolverHtml}
-                    <button class="btn btn-ghost" id="cancelBtn">Cerrar</button>
-                    <button class="btn btn-accent btn-full" id="saveBtn">Guardar cambios</button>`;
-      } else {
-        footHtml = `${devolverHtml}<button class="btn btn-ghost btn-full" id="cancelBtn">Cerrar</button>`;
-      }
+    // "Volver": deshace el último movimiento de etapa, sin límite de tiempo.
+    // La etapa previa la mantiene el trigger etapa_anterior en la base, así
+    // que funciona igual en la cartera compartida y en la Gestión Privada.
+    const puedeVolverEtapa = !isNew && !!lead && puedeEditar && state.page === "pipeline"
+      && !!lead.etapa_anterior && lead.etapa_anterior !== lead.etapa
+      && puedeMoverAEtapa(lead.etapa_anterior);
+    const volverHtml = puedeVolverEtapa
+      ? `<button class="btn btn-ghost" id="volverEtapaBtn" title="Deshacer el último movimiento">↩ Volver a ${escapeHtml(etapaLabel(lead.etapa_anterior))}</button>`
+      : "";
+
+    if(soloLectura){
+      footHtml = `${devolverHtml}<button class="btn btn-ghost btn-full" id="cancelBtn">Cerrar</button>`;
     } else {
       footHtml = `
         ${!isNew ? `<button class="btn btn-danger" id="deleteBtn">Eliminar</button>` : ""}
-        ${!isNew ? `<button class="btn btn-ghost" id="archiveActionBtn">Archivar</button>` : ""}
+        ${volverHtml}
         ${devolverHtml}
         ${state.privateMode && !isNew ? `<button class="btn btn-accent" id="compartirBtn">Compartir con Joaquín</button>` : ""}
         <span style="flex:1 1 auto"></span>
+        ${!isNew ? `<button class="btn btn-ghost" id="archiveActionBtn">Archivar</button>` : ""}
         <button class="btn btn-ghost" id="cancelBtn">Cancelar</button>
         <button class="btn btn-accent" id="saveBtn">${isNew ? "Crear lead" : "Guardar"}</button>
       `;
@@ -3108,9 +3119,18 @@
     const cancelBtn = document.getElementById("cancelBtn");
     if(cancelBtn) cancelBtn.addEventListener("click", closeLeadModal);
     const saveBtn = document.getElementById("saveBtn");
-    if(saveBtn) saveBtn.addEventListener("click", () => saveLeadFromForm(isNew, isClientMode));
+    if(saveBtn) saveBtn.addEventListener("click", () => saveLeadFromForm(isNew));
     const deleteBtn = document.getElementById("deleteBtn");
     if(deleteBtn) deleteBtn.addEventListener("click", () => deleteConfirm.classList.add("show"));
+    const volverEtapaBtn = document.getElementById("volverEtapaBtn");
+    if(volverEtapaBtn) volverEtapaBtn.addEventListener("click", async () => {
+      const l = activeLeads().find(x => x.id === state.editingId);
+      if(!l || !l.etapa_anterior) return;
+      const destino = l.etapa_anterior;
+      closeLeadModal();
+      await moveCard(l.id, destino);
+      toast(`Volvió a ${etapaLabel(destino)}`);
+    });
     const archiveActionBtn = document.getElementById("archiveActionBtn");
     if(archiveActionBtn) archiveActionBtn.addEventListener("click", async () => {
       const lead = activeLeads().find(l => l.id === state.editingId);
@@ -3174,9 +3194,9 @@
     }
   }
 
-  function startRecontacto(lead, isClientMode){
+  function startRecontacto(lead, soloLectura){
     patchLead(lead, { recontacto_active:true, recontacto_stage:1 }, "Lead enviado a Recontacto (semana 1)");
-    renderRecontactoBlock(lead, isClientMode);
+    renderRecontactoBlock(lead, soloLectura);
     render();
   }
 
@@ -3185,7 +3205,7 @@
   // cualquier otra columna):
   //  1) el lead ya está en recontacto activo (venga de "Seguimiento")
   //  2) el lead está en "Seguimiento": se puede mandar directo a recontacto.
-  function renderRecontactoBlock(lead, isClientMode){
+  function renderRecontactoBlock(lead, soloLectura){
     const relevant = lead && (lead.etapa === "seguimiento" || lead.recontacto_active);
     if(!relevant){
       cierreField.style.display = "none";
@@ -3194,6 +3214,15 @@
     cierreField.style.display = "block";
     cierreLabel.textContent = "Recontacto";
     cierreSeg.innerHTML = "";
+
+    // En solo lectura se informa el estado, sin botones de acción.
+    if(soloLectura){
+      recontactoBox.style.display = "flex";
+      recontactoBox.innerHTML = lead.recontacto_active
+        ? `<span class="rc-info">En recontacto: <b>semana ${lead.recontacto_stage} de 8</b></span>`
+        : `<span class="rc-info">En Seguimiento, sin recontacto activo.</span>`;
+      return;
+    }
 
     if(lead.recontacto_active){
       recontactoBox.style.display = "flex";
@@ -3211,12 +3240,12 @@
       });
       document.getElementById("rcCloseBtn").addEventListener("click", () => {
         patchLead(lead, { etapa:"pedido_confirmado", recontacto_active:false }, "Lead marcado como Pedido confirmado");
-        renderRecontactoBlock(lead, isClientMode);
+        renderRecontactoBlock(lead, soloLectura);
         render();
       });
       document.getElementById("rcStopBtn").addEventListener("click", () => {
         patchLead(lead, { recontacto_active:false });
-        renderRecontactoBlock(lead, isClientMode);
+        renderRecontactoBlock(lead, soloLectura);
         render();
       });
       return;
@@ -3228,7 +3257,7 @@
       <span class="rc-info">Si todavía no cerró, lo podés mandar a recontacto en vez de esperar.</span>
       <button type="button" class="btn btn-accent" id="rcStartBtn">Enviar a recontacto</button>
     `;
-    document.getElementById("rcStartBtn").addEventListener("click", () => startRecontacto(lead, isClientMode));
+    document.getElementById("rcStartBtn").addEventListener("click", () => startRecontacto(lead, soloLectura));
   }
 
   const historyField = document.getElementById("f_history");
@@ -3336,13 +3365,11 @@
     state.editingId = null;
   }
 
-  async function saveLeadFromForm(isNew, isClientMode){
-    if(!isClientMode || isNew){
-      if(!fields.empresa.value.trim()){
-        fieldWraps.empresa.classList.add("invalid");
-        fields.empresa.focus();
-        return;
-      }
+  async function saveLeadFromForm(isNew){
+    if(!fields.empresa.value.trim()){
+      fieldWraps.empresa.classList.add("invalid");
+      fields.empresa.focus();
+      return;
     }
     fieldWraps.empresa.classList.remove("invalid");
 
@@ -3372,27 +3399,20 @@
     } else {
       const lead = activeLeads().find(l => l.id === state.editingId);
       if(!lead) return;
-      let patch;
-      if(isClientMode){
-        patch = {
-          resultado: fields.resultado.value,
-          notas: fields.notas.value.trim(),
-          fecha_contacto: fields.fecha.value || null,
-        };
-      } else {
-        patch = {
-          empresa: fields.empresa.value.trim(),
-          contacto: fields.contacto.value.trim(),
-          telefono: fields.telefono.value.trim(),
-          rubro: fields.rubro.value,
-          ticket: Number(fields.ticket.value) || 0,
-          fuente: fields.fuente.value.trim(),
-          fecha_contacto: fields.fecha.value || null,
-          resultado: fields.resultado.value,
-          notas: fields.notas.value.trim(),
-          ...leadContacto2.values(),
-        };
-      }
+      // Quien llega hasta acá tiene permiso de edición completa sobre el
+      // lead (el pie de solo lectura ni siquiera muestra "Guardar").
+      const patch = {
+        empresa: fields.empresa.value.trim(),
+        contacto: fields.contacto.value.trim(),
+        telefono: fields.telefono.value.trim(),
+        rubro: fields.rubro.value,
+        ticket: Number(fields.ticket.value) || 0,
+        fuente: fields.fuente.value.trim(),
+        fecha_contacto: fields.fecha.value || null,
+        resultado: fields.resultado.value,
+        notas: fields.notas.value.trim(),
+        ...leadContacto2.values(),
+      };
       Object.assign(lead, patch);
       const { error } = await supa.from(activeTable()).update(patch).eq("id", lead.id);
       if(error){ console.error(error); toast("No se pudo guardar el cambio"); return; }
@@ -3492,7 +3512,7 @@
   const archiveList = document.getElementById("archiveList");
 
   function renderArchiveList(){
-    const archived = activeLeads().filter(l => l.archived);
+    const archived = activeLeads().filter(l => l.archived && puedeEditarLead(l));
     if(!archived.length){
       archiveList.innerHTML = `<div class="archive-empty">No hay leads archivados.</div>`;
       return;
@@ -3541,7 +3561,9 @@
       papeleraList.innerHTML = `<div class="archive-empty">No se pudo cargar la papelera.</div>`;
       return;
     }
-    const trashed = data || [];
+    // Tristán no restaura leads de la zona de Joaquín, así que tampoco los
+    // ve listados en la papelera.
+    const trashed = (data || []).filter(l => puedeEditarLead(l));
     if(!trashed.length){
       papeleraList.innerHTML = `<div class="archive-empty">La papelera está vacía.</div>`;
       return;
