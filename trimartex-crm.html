@@ -3333,14 +3333,13 @@
     render();
   }
 
-  // Cubre 2 situaciones (desde que "Cerrado" se retiró a favor de Pedido
-  // confirmado/Entregado/Baja, que ya se mueven por drag & drop como
-  // cualquier otra columna):
-  //  1) el lead ya está en recontacto activo (venga de "Seguimiento")
-  //  2) el lead está en "Seguimiento": se puede mandar directo a recontacto.
+  // Recontacto disponible para CUALQUIER lead ya guardado, en cualquier etapa
+  // y en los dos espacios (pipeline compartido y Gestión Privada). Antes solo
+  // aparecía en "Seguimiento", lo que dejaba fuera a los leads de Cotización,
+  // Leads Tristán, Nuevo, etc. Al sacarlo de recontacto el lead vuelve a la
+  // etapa en la que estaba (nunca se pisa lead.etapa al activarlo).
   function renderRecontactoBlock(lead, soloLectura){
-    const relevant = lead && (lead.etapa === "seguimiento" || lead.recontacto_active);
-    if(!relevant){
+    if(!lead){
       cierreField.style.display = "none";
       return;
     }
@@ -3353,7 +3352,7 @@
       recontactoBox.style.display = "flex";
       recontactoBox.innerHTML = lead.recontacto_active
         ? `<span class="rc-info">En recontacto: <b>semana ${lead.recontacto_stage} de 8</b></span>`
-        : `<span class="rc-info">En Seguimiento, sin recontacto activo.</span>`;
+        : `<span class="rc-info">Sin recontacto activo.</span>`;
       return;
     }
 
@@ -3384,10 +3383,10 @@
       return;
     }
 
-    // lead.etapa === "seguimiento" y sin recontacto activo.
+    // Sin recontacto activo: se puede mandar desde cualquier etapa.
     recontactoBox.style.display = "flex";
     recontactoBox.innerHTML = `
-      <span class="rc-info">Si todavía no cerró, lo podés mandar a recontacto en vez de esperar.</span>
+      <span class="rc-info">Está en <b>${escapeHtml(etapaLabel(lead.etapa))}</b>. Si todavía no cerró, lo podés mandar a recontacto en vez de esperar.</span>
       <button type="button" class="btn btn-accent" id="rcStartBtn">Enviar a recontacto</button>
     `;
     document.getElementById("rcStartBtn").addEventListener("click", () => startRecontacto(lead, soloLectura));
