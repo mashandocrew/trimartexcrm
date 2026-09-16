@@ -24,6 +24,7 @@ alter table public.leads_privados_tristan
 create or replace function public.trg_guardar_etapa_anterior()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   if new.etapa is distinct from old.etapa then
