@@ -441,6 +441,16 @@
     transition: background .15s ease;
   }
   .column-body.drop-hover{ background: var(--accent-soft); border-radius: 12px; }
+  /* Reorden vertical: la línea marca entre qué dos cards va a caer la que se
+     está arrastrando. .drop-before la dibuja arriba de una card; .drop-at-end
+     al final de la columna. */
+  .lead-card.drop-before{ box-shadow: 0 -3px 0 -1px var(--accent); }
+  .column-body.drop-at-end::after{
+    content:""; display:block; height:3px; border-radius:2px;
+    background: var(--accent); margin: 2px 4px 0;
+  }
+  .lead-card-readonly{ opacity:.9; }
+  .lead-card-readonly:active{ transform:none; }
   .column-body::-webkit-scrollbar{ width:6px; }
   .column-body::-webkit-scrollbar-thumb{ background: var(--border); border-radius:3px; }
 
@@ -1639,6 +1649,51 @@
   // que ve Tristán es "Cotización pendiente".
   const TRISTAN_VISIBLE = ["leads_tristan","cotizacion_pendiente","cotizacion_enviada","seguimiento","pedido_confirmado","entregado","baja"];
 
+  /* ============ Permisos (helper central) ============
+     Toda decisión de "¿este usuario puede tocar este lead?" sale de acá.
+     Ningún componente vuelve a mirar state.mode ni la etapa por su cuenta.
+
+     Regla de negocio confirmada por el cliente:
+       · Etapas "nuevo" y "contactado" de la cartera compartida: zona de
+         Joaquín. Tristán las ve en solo lectura.
+       · "leads_tristan" y de "cotizacion_pendiente" en adelante: zona de
+         escritura de Tristán — edita, mueve, elimina, archiva y deshace sin
+         límite de tiempo.
+       · Su Gestión Privada es enteramente suya.
+       · Joaquín nunca tiene restricciones.
+
+     Esto es SOLO la UI: la misma regla está en RLS vía
+     public.puede_editar_lead_tristan() (migración 20260916000002). Si el
+     conjunto de etapas cambia, hay que tocar los dos lados. */
+  const ETAPAS_SOLO_LECTURA_TRISTAN = ["nuevo", "contactado"];
+
+  function esZonaEscrituraTristan(etapa){
+    return !ETAPAS_SOLO_LECTURA_TRISTAN.includes(etapa);
+  }
+
+  // lead == null significa "lead nuevo": la etapa destino la valida
+  // puedeMoverAEtapa(), no esto.
+  function puedeEditarLead(lead){
+    if(state.mode === "joaquin") return true;
+    if(state.privateMode) return true;
+    if(!lead) return true;
+    return esZonaEscrituraTristan(lead.etapa);
+  }
+
+  function puedeMoverAEtapa(etapa){
+    if(state.mode === "joaquin" || state.privateMode) return true;
+    return esZonaEscrituraTristan(etapa);
+  }
+
+  // Paso del "fractional indexing" de la columna: al soltar una card en un
+  // extremo se le suma/resta este valor al orden de su única vecina.
+  const ORDEN_STEP = 1000;
+
+  function porOrden(a, b){
+    const d = (Number(a.orden) || 0) - (Number(b.orden) || 0);
+    return d !== 0 ? d : (new Date(a.created_at) - new Date(b.created_at));
+  }
+
   const RECONTACTO_STAGES = Array.from({length:8}, (_,i) => ({
     key: "r" + (i+1), label: "Recontacto " + (i+1), color: "#0a84ff"
   }));
@@ -1915,14 +1970,14 @@
     return activeLeads().filter(l =>
       !l.archived && !l.recontacto_active &&
       l.etapa === colKey && matchesSearch(l, state.search) && matchesFilters(l)
-    );
+    ).sort(porOrden);
   }
 
   function leadsForRecontactoStage(stageNum){
     return activeLeads().filter(l =>
       !l.archived && l.recontacto_active &&
       l.recontacto_stage === stageNum && matchesSearch(l, state.search) && matchesFilters(l)
-    );
+    ).sort(porOrden);
   }
 
   function leadsForColumn(colKey){
@@ -2316,7 +2371,7 @@
           ${totalTicket ? `<div class="column-stats">${formatARS(totalTicket)} en total</div>` : ""}
         </div>
         <div class="column-body" data-column="${c.key}">
-          ${leads.length ? leads.map(l => cardHtml(l, isRecontacto)).join("") : `<div class="column-empty">${emptyMsg}</div>`}
+          ${leads.length ? leads.map(l => cardHtml(l, isRecontacto, !puedeEditarLead(l))).join("") : `<div class="column-empty">${emptyMsg}</div>`}
         </div>
         <div class="column-resize-handle" data-resize-column="${c.key}" title="Arrastrar para cambiar el ancho"></div>
       </section>`;
@@ -2338,7 +2393,9 @@
         if(card._suppressClick) { card._suppressClick = false; return; }
         openLeadModal(card.dataset.id);
       });
-      attachDrag(card);
+      // Un lead en zona de solo lectura se abre para consultarlo, pero no se
+      // arrastra (ni para cambiar de etapa ni para reordenar).
+      if(card.dataset.readonly !== "1") attachDrag(card);
     });
     wireAbcBadges(boardEl);
   }
@@ -2428,7 +2485,7 @@
     const wa = toWhatsappLink(lead.telefono);
     const rubroTag = rubroTagAttrs(lead.rubro);
     return `
-    <article class="lead-card" data-id="${lead.id}">
+    <article class="lead-card${readOnly ? " lead-card-readonly" : ""}" data-id="${lead.id}"${readOnly ? ' data-readonly="1" title="Solo lectura: este lead está en una etapa a cargo de Joaquín"' : ""}>
       <div class="card-top">
         <div>
           <div class="card-company">${escapeHtml(lead.empresa)}</div>
@@ -2472,8 +2529,48 @@
     const target = el.closest(".column-body, .mobile-tab");
     if(!target) return null;
     const col = target.dataset.column;
-    if(state.page === "pipeline" && state.mode === "tristan" && !state.privateMode && !TRISTAN_VISIBLE.includes(col)) return null;
+    if(state.page === "pipeline" && !state.privateMode && state.mode === "tristan"
+       && (!TRISTAN_VISIBLE.includes(col) || !puedeMoverAEtapa(col))) return null;
     return target;
+  }
+
+  // Dentro de una columna, ¿ante qué card caería el puntero? null = al final.
+  function cardAnteLaQueInsertar(columnBody, y, draggedId){
+    const cards = Array.from(columnBody.querySelectorAll(".lead-card"))
+      .filter(c => c.dataset.id !== draggedId);
+    for(const c of cards){
+      const r = c.getBoundingClientRect();
+      if(y < r.top + r.height / 2) return c;
+    }
+    return null;
+  }
+
+  function marcarInsercion(columnBody, antes){
+    document.querySelectorAll(".drop-before").forEach(n => n.classList.remove("drop-before"));
+    document.querySelectorAll(".drop-at-end").forEach(n => n.classList.remove("drop-at-end"));
+    if(!columnBody) return;
+    if(antes) antes.classList.add("drop-before");
+    else columnBody.classList.add("drop-at-end");
+  }
+
+  // Fractional indexing: el nuevo `orden` es el punto medio entre los de las
+  // dos vecinas. Si falta una de las dos, se corre ORDEN_STEP desde la única
+  // que hay. null = no hay con qué comparar, se deja el orden que tenía.
+  function calcularOrden(columnBody, antes, draggedId){
+    const cards = Array.from(columnBody.querySelectorAll(".lead-card"))
+      .filter(c => c.dataset.id !== draggedId);
+    const idx = antes ? cards.indexOf(antes) : cards.length;
+    const ordenDe = (el) => {
+      if(!el) return null;
+      const lead = activeLeads().find(l => l.id === el.dataset.id);
+      return (lead && lead.orden != null) ? Number(lead.orden) : null;
+    };
+    const prev = ordenDe(cards[idx - 1]);
+    const next = ordenDe(cards[idx]);
+    if(prev == null && next == null) return null;
+    if(prev == null) return next - ORDEN_STEP;
+    if(next == null) return prev + ORDEN_STEP;
+    return (prev + next) / 2;
   }
 
   /* ============ Drag & drop (pointer events, mouse+touch) ============ */
@@ -2506,6 +2603,12 @@
           ghost.style.top = (rect.top + (ev.clientY - startY)) + "px";
           const target = findDropTargetAt(ev.clientX, ev.clientY);
           highlightTarget(target);
+          marcarInsercion(
+            target && target.classList.contains("column-body") ? target : null,
+            target && target.classList.contains("column-body")
+              ? cardAnteLaQueInsertar(target, ev.clientY, cardEl.dataset.id)
+              : null
+          );
         }
       }
 
@@ -2517,11 +2620,17 @@
 
         if(dragging){
           const target = findDropTargetAt(ev.clientX, ev.clientY);
+          let nuevoOrden = null;
+          if(target && target.classList.contains("column-body")){
+            const antes = cardAnteLaQueInsertar(target, ev.clientY, cardEl.dataset.id);
+            nuevoOrden = calcularOrden(target, antes, cardEl.dataset.id);
+          }
           highlightTarget(null);
+          marcarInsercion(null);
           if(ghost){ ghost.remove(); ghost = null; }
           cardEl.classList.remove("dragging");
           if(target){
-            moveCard(cardEl.dataset.id, target.dataset.column);
+            moveCard(cardEl.dataset.id, target.dataset.column, nuevoOrden);
           } else {
             render();
           }
@@ -2534,20 +2643,28 @@
     });
   }
 
-  async function moveCard(id, targetKey){
+  async function moveCard(id, targetKey, nuevoOrden){
     const lead = activeLeads().find(l => l.id === id);
     if(!lead) return;
-
-    let patch;
-    if(state.page === "recontacto"){
-      const stage = Number(targetKey.slice(1));
-      if(lead.recontacto_stage === stage){ render(); return; }
-      patch = { recontacto_stage: stage };
-    } else {
-      if(lead.etapa === targetKey){ render(); return; }
-      patch = { etapa: targetKey };
+    // Doble red: la card de un lead bloqueado ni siquiera engancha el drag,
+    // pero el permiso se vuelve a chequear acá antes de tocar la base.
+    if(!puedeEditarLead(lead) || (state.page !== "recontacto" && !puedeMoverAEtapa(targetKey))){
+      render();
+      return;
     }
 
+    const patch = {};
+    if(state.page === "recontacto"){
+      const stage = Number(targetKey.slice(1));
+      if(lead.recontacto_stage !== stage) patch.recontacto_stage = stage;
+    } else {
+      if(lead.etapa !== targetKey) patch.etapa = targetKey;
+    }
+    // Reordenar dentro de la misma columna es un cambio válido por sí solo.
+    if(nuevoOrden != null && Number(nuevoOrden) !== Number(lead.orden)) patch.orden = nuevoOrden;
+    if(!Object.keys(patch).length){ render(); return; }
+
+    const previo = { etapa: lead.etapa, recontacto_stage: lead.recontacto_stage, orden: lead.orden };
     Object.assign(lead, patch);
     state.activeMobileColumn = targetKey;
     render();
@@ -2555,7 +2672,12 @@
     if(justMoved) justMoved.classList.add("drop-in");
 
     const { error } = await supa.from(activeTable()).update(patch).eq("id", id);
-    if(error){ console.error(error); toast("No se pudo guardar el cambio"); }
+    if(error){
+      console.error(error);
+      Object.assign(lead, previo);
+      render();
+      toast("No se pudo guardar el cambio");
+    }
   }
 
   /* ============ Search ============ */
@@ -5476,6 +5598,7 @@
       .from("leads")
       .select("*")
       .is("trashed_at", null)
+      .order("orden", { ascending: true })
       .order("created_at", { ascending: true });
     if(error){ console.error(error); toast("No se pudieron cargar los leads"); return; }
     state.leads = data || [];
@@ -5486,6 +5609,7 @@
       .from("leads_privados_tristan")
       .select("*")
       .is("trashed_at", null)
+      .order("orden", { ascending: true })
       .order("created_at", { ascending: true });
     if(error){ console.error(error); toast("No se pudieron cargar los leads de la Gestión Privada"); return; }
     state.privados = data || [];
