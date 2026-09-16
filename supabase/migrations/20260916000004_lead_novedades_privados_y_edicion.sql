@@ -72,3 +72,8 @@ create policy "lead_novedades delete if authorized"
     (lead_id is not null and public.is_authorized_user())
     or (lead_privado_id is not null and public.is_tristan())
   );
+
+-- Realtime: con la replica identity por defecto, el payload de un DELETE solo
+-- trae la PK, así que el frontend no podría saber de qué lead era la novedad
+-- borrada. FULL hace que llegue la fila entera (tabla chica, costo mínimo).
+alter table public.lead_novedades replica identity full;

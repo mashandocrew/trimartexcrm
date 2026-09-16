@@ -708,6 +708,10 @@
   .novedad-date{ font-size:11px; color:var(--text-faint); font-weight:600; }
   .novedad-text{ font-size:12.5px; color:var(--text); line-height:1.4; }
   .novedad-text b{ color:var(--text-dim); font-weight:600; }
+  .novedad-sin-respuesta{ color:var(--text-faint); font-style:italic; }
+  .novedad-actions{ display:flex; gap:6px; margin-top:4px; }
+  .novedad-actions .btn{ padding:3px 9px; font-size:11.5px; }
+  .novedad-item textarea{ width:100%; min-height:52px; margin-top:4px; }
 
   .readonly-note{
     font-size:12px; color:var(--text-faint); background:var(--surface); border:1px solid var(--border);
@@ -3048,18 +3052,20 @@
     leadContacto2.setLocked(soloLectura);
 
     renderRecontactoBlock(lead, soloLectura);
-    // lead_history y lead_novedades referencian leads(id), no
-    // leads_privados_tristan(id) — no aplican a un lead que todavía no se compartió.
+    // lead_history solo existe para el pipeline compartido (su lead_id
+    // referencia leads(id) y leads_privados_tristan no tiene trigger de
+    // auditoría). lead_novedades, en cambio, ya soporta los dos pipelines
+    // vía lead_privado_id (migración 20260916000004).
     if(!state.privateMode){
       renderHistory(lead);
       if(lead) fetchHistory(lead.id).then(() => renderHistory(lead));
-
-      renderNovedades(lead);
-      if(lead) fetchNovedades(lead.id).then(() => renderNovedades(lead));
     } else {
       historyField.style.display = "none";
-      novedadesField.style.display = "none";
     }
+
+    novedadEditandoId = null;
+    renderNovedades(lead);
+    if(lead) fetchNovedades(lead.id).then(() => renderNovedades(lead));
 
     // Los recordatorios sí aplican en ambos espacios (compartido y Gestión
     // Privada) — recién se pueden crear una vez que el lead existe.
@@ -3285,35 +3291,105 @@
   const inNovedadMensaje = document.getElementById("in_novedad_mensaje");
   const inNovedadRespuesta = document.getElementById("in_novedad_respuesta");
 
-  // "Novedades de contacto": bitácora append-only de lead_novedades. Solo
-  // Joaquín puede agregar entradas nuevas (decisión de producto) — Tristán
-  // puede ver el historial para tener contexto, pero el form de alta se
-  // oculta para su rol. Nadie puede editar ni borrar una entrada ya creada.
+  // "Novedades de contacto": bitácora de lead_novedades.
+  //
+  // Antes estaba restringida por partida triple — solo en la etapa
+  // "Contactado", solo en el pipeline compartido y solo Joaquín podía
+  // escribir, sin poder corregir nada después. Eso hacía imposible el flujo
+  // real: primero se anota el mensaje enviado y la respuesta llega más
+  // tarde. Ahora se ve y se edita en cualquier etapa, en los dos pipelines,
+  // y quien tenga permiso de edición sobre el lead (ver puedeEditarLead)
+  // puede crear, editar y borrar entradas.
+  let novedadEditandoId = null;
+
+  function novedadItemHtml(n, editable){
+    if(editable && novedadEditandoId === n.id){
+      return `
+        <div class="novedad-item" data-id="${n.id}">
+          <span class="novedad-date">${formatDateTime(n.contactado_at)}</span>
+          <textarea class="novedad-edit-mensaje" placeholder="Mensaje enviado...">${escapeHtml(n.mensaje || "")}</textarea>
+          <textarea class="novedad-edit-respuesta" placeholder="Respuesta...">${escapeHtml(n.respuesta || "")}</textarea>
+          <div class="novedad-actions">
+            <button type="button" class="btn btn-accent novedad-save-btn">Guardar</button>
+            <button type="button" class="btn btn-ghost novedad-cancel-btn">Cancelar</button>
+          </div>
+        </div>`;
+    }
+    return `
+      <div class="novedad-item" data-id="${n.id}">
+        <span class="novedad-date">${formatDateTime(n.contactado_at)}</span>
+        ${n.mensaje ? `<span class="novedad-text"><b>Mensaje:</b> ${escapeHtml(n.mensaje)}</span>` : ""}
+        ${n.respuesta
+          ? `<span class="novedad-text"><b>Respuesta:</b> ${escapeHtml(n.respuesta)}</span>`
+          : `<span class="novedad-text novedad-sin-respuesta">Sin respuesta registrada.</span>`}
+        ${editable ? `<div class="novedad-actions">
+            <button type="button" class="btn btn-ghost novedad-edit-btn">${n.respuesta ? "Editar" : "Agregar respuesta"}</button>
+            <button type="button" class="btn btn-ghost novedad-del-btn">Eliminar</button>
+          </div>` : ""}
+      </div>`;
+  }
+
   function renderNovedades(lead){
-    if(!lead || lead.etapa !== "contactado"){
+    if(!lead){
       novedadesField.style.display = "none";
       return;
     }
+    const editable = puedeEditarLead(lead);
     novedadesField.style.display = "block";
     const rows = state.novedadesCache[lead.id] || [];
     novedadesList.innerHTML = rows.length
-      ? rows.map(n => `
-        <div class="novedad-item">
-          <span class="novedad-date">${formatDateTime(n.contactado_at)}</span>
-          ${n.mensaje ? `<span class="novedad-text"><b>Mensaje:</b> ${escapeHtml(n.mensaje)}</span>` : ""}
-          ${n.respuesta ? `<span class="novedad-text"><b>Respuesta:</b> ${escapeHtml(n.respuesta)}</span>` : ""}
-        </div>
-      `).join("")
+      ? rows.map(n => novedadItemHtml(n, editable)).join("")
       : `<div class="history-empty">Sin novedades registradas.</div>`;
 
-    if(state.mode === "joaquin"){
+    wireNovedadItems(lead);
+
+    if(editable){
       novedadAddForm.style.display = "block";
-      inNovedadFecha.value = nowDatetimeLocal();
-      inNovedadMensaje.value = "";
-      inNovedadRespuesta.value = "";
+      if(!inNovedadFecha.value) inNovedadFecha.value = nowDatetimeLocal();
     } else {
       novedadAddForm.style.display = "none";
     }
+  }
+
+  function wireNovedadItems(lead){
+    novedadesList.querySelectorAll(".novedad-edit-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        novedadEditandoId = btn.closest(".novedad-item").dataset.id;
+        renderNovedades(lead);
+      });
+    });
+    novedadesList.querySelectorAll(".novedad-cancel-btn").forEach(btn => {
+      btn.addEventListener("click", () => { novedadEditandoId = null; renderNovedades(lead); });
+    });
+    novedadesList.querySelectorAll(".novedad-save-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const item = btn.closest(".novedad-item");
+        const id = item.dataset.id;
+        const patch = {
+          mensaje: item.querySelector(".novedad-edit-mensaje").value.trim(),
+          respuesta: item.querySelector(".novedad-edit-respuesta").value.trim(),
+        };
+        if(!patch.mensaje && !patch.respuesta){ toast("Escribí al menos el mensaje o la respuesta"); return; }
+        const { error } = await supa.from("lead_novedades").update(patch).eq("id", id);
+        if(error){ console.error(error); toast("No se pudo guardar la novedad"); return; }
+        const row = (state.novedadesCache[lead.id] || []).find(n => n.id === id);
+        if(row) Object.assign(row, patch);
+        novedadEditandoId = null;
+        renderNovedades(lead);
+        toast("Novedad actualizada");
+      });
+    });
+    novedadesList.querySelectorAll(".novedad-del-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const id = btn.closest(".novedad-item").dataset.id;
+        if(!confirm("¿Eliminar esta novedad?")) return;
+        const { error } = await supa.from("lead_novedades").delete().eq("id", id);
+        if(error){ console.error(error); toast("No se pudo eliminar la novedad"); return; }
+        state.novedadesCache[lead.id] = (state.novedadesCache[lead.id] || []).filter(n => n.id !== id);
+        renderNovedades(lead);
+        toast("Novedad eliminada");
+      });
+    });
   }
 
   function nowDatetimeLocal(){
@@ -3323,8 +3399,8 @@
   }
 
   document.getElementById("addNovedadBtn").addEventListener("click", async () => {
-    const lead = state.leads.find(l => l.id === state.editingId);
-    if(!lead) return;
+    const lead = activeLeads().find(l => l.id === state.editingId);
+    if(!lead || !puedeEditarLead(lead)) return;
     const mensaje = inNovedadMensaje.value.trim();
     const respuesta = inNovedadRespuesta.value.trim();
     if(!mensaje && !respuesta){
@@ -3332,12 +3408,15 @@
       return;
     }
     const payload = {
-      lead_id: lead.id,
       contactado_at: inNovedadFecha.value ? new Date(inNovedadFecha.value).toISOString() : new Date().toISOString(),
       mensaje,
       respuesta,
       created_by: state.session.user.id,
     };
+    // El CHECK de la tabla exige exactamente uno de los dos (igual que en
+    // recordatorios): lead_id para la cartera compartida, lead_privado_id
+    // para la Gestión Privada.
+    if(state.privateMode) payload.lead_privado_id = lead.id; else payload.lead_id = lead.id;
     const { data, error } = await supa.from("lead_novedades").insert(payload).select().single();
     if(error){ console.error(error); toast("No se pudo guardar la novedad"); return; }
     if(!state.novedadesCache[lead.id]) state.novedadesCache[lead.id] = [];
@@ -3345,15 +3424,19 @@
       state.novedadesCache[lead.id].unshift(data);
       state.novedadesCache[lead.id].sort((a, b) => new Date(b.contactado_at) - new Date(a.contactado_at));
     }
+    inNovedadFecha.value = nowDatetimeLocal();
+    inNovedadMensaje.value = "";
+    inNovedadRespuesta.value = "";
     renderNovedades(lead);
     toast("Novedad agregada");
   });
 
   async function fetchNovedades(leadId){
+    const column = state.privateMode ? "lead_privado_id" : "lead_id";
     const { data, error } = await supa
       .from("lead_novedades")
       .select("*")
-      .eq("lead_id", leadId)
+      .eq(column, leadId)
       .order("contactado_at", { ascending: false });
     if(error){ console.error(error); return []; }
     state.novedadesCache[leadId] = data || [];
@@ -5472,7 +5555,7 @@
       .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, handleLeadRealtime)
       .on("postgres_changes", { event: "*", schema: "public", table: "leads_privados_tristan" }, handlePrivadoRealtime)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "lead_history" }, handleHistoryRealtime)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "lead_novedades" }, handleNovedadRealtime)
+      .on("postgres_changes", { event: "*", schema: "public", table: "lead_novedades" }, handleNovedadRealtime)
       .on("postgres_changes", { event: "*", schema: "public", table: "clientes" }, handleClienteRealtime)
       .on("postgres_changes", { event: "*", schema: "public", table: "notificaciones" }, handleNotifRealtime)
       .on("postgres_changes", { event: "*", schema: "public", table: "recordatorios" }, handleRecordatorioRealtime)
@@ -5603,15 +5686,24 @@
   }
 
   function handleNovedadRealtime(payload){
-    const row = payload.new;
-    if(!state.novedadesCache[row.lead_id]) state.novedadesCache[row.lead_id] = [];
-    if(!state.novedadesCache[row.lead_id].find(n => n.id === row.id)){
-      state.novedadesCache[row.lead_id].unshift(row);
-      state.novedadesCache[row.lead_id].sort((a, b) => new Date(b.contactado_at) - new Date(a.contactado_at));
+    const row = payload.new || payload.old;
+    if(!row) return;
+    // Una novedad cuelga de leads.id o de leads_privados_tristan.id — la
+    // caché se indexa por el lead al que apunta, sea cual sea.
+    const leadId = row.lead_id || row.lead_privado_id;
+    if(!leadId) return;
+    const cache = state.novedadesCache[leadId] || (state.novedadesCache[leadId] = []);
+
+    if(payload.eventType === "DELETE"){
+      state.novedadesCache[leadId] = cache.filter(n => n.id !== row.id);
+    } else {
+      const idx = cache.findIndex(n => n.id === row.id);
+      if(idx > -1) cache[idx] = row; else cache.unshift(row);
+      cache.sort((a, b) => new Date(b.contactado_at) - new Date(a.contactado_at));
     }
-    if(state.editingId === row.lead_id){
-      const lead = state.leads.find(l => l.id === row.lead_id);
-      renderNovedades(lead);
+
+    if(state.editingId === leadId){
+      renderNovedades(activeLeads().find(l => l.id === leadId));
     }
   }
 
