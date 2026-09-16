@@ -312,6 +312,28 @@
   .abc-badge.abc-c{ background: var(--positive-soft); border-color: rgba(48,209,88,0.4); color:#5fe083; }
   span.abc-badge{ cursor:default; }
 
+  /* Barra de filtro ABC: siempre visible arriba del tablero (pipeline,
+     recontacto, contactados y cartera), en escritorio y en celular. */
+  .abc-filter-bar{
+    flex:0 0 auto; display:none; align-items:center; gap:8px;
+    padding: 8px 16px; overflow-x:auto; scrollbar-width:none;
+    background: var(--bg-elevated); border-bottom: 1px solid var(--border-soft);
+  }
+  .abc-filter-bar::-webkit-scrollbar{ display:none; }
+  .abc-filter-label{ font-size:12px; font-weight:600; color:var(--text-dim); flex:0 0 auto; margin-right:2px; }
+  .abc-filter-bar .mobile-tab{ padding:6px 11px; font-size:12.5px; }
+  .abc-filter-bar .mobile-tab .abc-dot{ width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+  .abc-seg{ display:flex; gap:6px; flex-wrap:wrap; }
+  .abc-seg button{
+    min-width:44px; padding:8px 12px; border-radius:10px; font-weight:700; font-size:13px;
+    border:1px solid var(--border); background:var(--surface); color:var(--text-dim); cursor:pointer;
+  }
+  .abc-seg button.active.abc-a{ background: var(--danger-soft); border-color: rgba(255,69,58,0.55); color:#ff8078; }
+  .abc-seg button.active.abc-b{ background: var(--warn-soft); border-color: rgba(255,214,10,0.55); color:#f4d24e; }
+  .abc-seg button.active.abc-c{ background: var(--positive-soft); border-color: rgba(48,209,88,0.55); color:#5fe083; }
+  .abc-seg button.active.abc-sin{ background: var(--surface-2); border-color: var(--text-faint); color:var(--text); }
+  .abc-seg button:disabled{ opacity:.6; cursor:default; }
+
   /* ---------- Tareas ---------- */
   .tareas-filter-sep{ width:1px; align-self:stretch; background:var(--border); margin:0 4px; flex:0 0 auto; }
   .tareas-grid{
@@ -734,8 +756,39 @@
   .notif-row.notif-unread{ border-left-color: var(--accent); }
   .notif-row.notif-unread .info b::before{ content:"● "; color: var(--accent); font-size:9px; }
   .notif-row .info{ cursor:pointer; }
-  .notif-delete-btn{ width:22px; height:22px; align-self:center; flex:0 0 auto; color:var(--text-faint); }
-  .notif-delete-btn:hover{ color:var(--danger); }
+  /* Cada notificación: menú ⋮ a la derecha, centrado en la altura de la
+     caja (Marcar como leída / Eliminar). En pantallas táctiles además se
+     desliza: derecha = eliminar, izquierda = marcar leída. */
+  .notif-swipe{ position:relative; border-radius:10px; overflow:hidden; }
+  .notif-swipe-bg{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:space-between;
+    padding:0 18px; font-size:12.5px; font-weight:700; color:#fff; opacity:0;
+  }
+  .notif-swipe-bg.del{ background: var(--danger); }
+  .notif-swipe-bg.read{ background: var(--accent); justify-content:flex-end; }
+  .notif-swipe .notif-row{ position:relative; touch-action: pan-y; }
+  .notif-swipe .notif-row.swiping{ transition:none; }
+  .notif-swipe .notif-row.settle{ transition: transform .22s ease; }
+  .notif-row{ padding-right:6px; }
+  .notif-more-btn{
+    width:32px; height:32px; align-self:center; flex:0 0 auto; border:none; background:transparent;
+    color:var(--text-faint); border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .notif-more-btn:hover, .notif-more-btn[aria-expanded="true"]{ background:var(--surface-2); color:var(--text); }
+  .notif-more-btn svg{ width:18px; height:18px; }
+  .notif-menu{
+    position:fixed; z-index:400; min-width:180px; padding:5px;
+    background: var(--bg-elevated); border:1px solid var(--border); border-radius:12px;
+    box-shadow: 0 14px 34px rgba(0,0,0,0.45);
+  }
+  .notif-menu button{
+    display:block; width:100%; text-align:left; padding:9px 11px; border:none; background:transparent;
+    color:var(--text); font-size:13px; border-radius:8px; cursor:pointer;
+  }
+  .notif-menu button:hover{ background:var(--surface-2); }
+  .notif-menu button.danger{ color:#ff8078; }
+  .notif-swipe-hint{ font-size:11.5px; color:var(--text-faint); text-align:center; margin:0 0 8px; display:none; }
+  @media (hover: none) and (pointer: coarse){ .notif-swipe-hint{ display:block; } }
 
   /* toast */
   #toast{
@@ -1090,6 +1143,7 @@
 
   <nav class="mobile-tabs" id="mobileTabs"></nav>
   <nav class="cartera-filters" id="carteraFilters" style="display:none;"></nav>
+  <nav class="abc-filter-bar" id="abcFilterBar" aria-label="Filtrar por clasificación ABC"></nav>
 
   <main class="board-wrap">
     <div class="board" id="board"></div>
@@ -1207,6 +1261,16 @@
             <option value="negativa">Negativa</option>
             <option value="a_confirmar">A confirmar</option>
           </select>
+        </div>
+      </div>
+
+      <div class="field" id="f_abc">
+        <label>Clasificación ABC</label>
+        <div class="abc-seg" id="in_abc" role="radiogroup">
+          <button type="button" data-abc="A" class="abc-a">A</button>
+          <button type="button" data-abc="B" class="abc-b">B</button>
+          <button type="button" data-abc="C" class="abc-c">C</button>
+          <button type="button" data-abc="" class="abc-sin">Sin clasificar</button>
         </div>
       </div>
 
@@ -1485,6 +1549,7 @@
     </div>
     <div class="modal-body">
       <nav class="cartera-filters notif-filtros" id="notifFiltros"></nav>
+      <p class="notif-swipe-hint">Deslizá → para eliminar · ← para marcar como leída</p>
       <div class="archive-list" id="notifList"></div>
     </div>
     <div class="modal-foot">
@@ -1813,6 +1878,7 @@
       rubrosCliente: [],
       creadoDesde: "", creadoHasta: "",   // yyyy-mm-dd, comparado contra created_at
       modDesde: "", modHasta: "",         // yyyy-mm-dd, comparado contra updated_at
+      abc: "todos",                       // "todos" | "A" | "B" | "C" | "sin" — barra ABC arriba del tablero
     },
     carteraFilter: "todos", // "todos" | "activo" | "inactivo"
     columnWidths: loadColumnWidths(), // columnKey -> ancho en px (pipeline/recontacto)
@@ -1939,6 +2005,7 @@
   function matchesFilters(lead){
     const f = state.filtros;
     if(f.rubros.length && !f.rubros.includes(lead.rubro)) return false;
+    if(!matchesAbc(lead)) return false;
     const creadoFecha = (lead.created_at || "").slice(0, 10);
     const modFecha = (lead.updated_at || "").slice(0, 10);
     if(f.creadoDesde && creadoFecha < f.creadoDesde) return false;
@@ -1946,6 +2013,11 @@
     if(f.modDesde && modFecha < f.modDesde) return false;
     if(f.modHasta && modFecha > f.modHasta) return false;
     return true;
+  }
+
+  function matchesAbc(row){
+    const f = state.filtros.abc || "todos";
+    return f === "todos" || (row.clasificacion_abc || "sin") === f;
   }
 
   function hayFiltrosActivos(){
@@ -1965,6 +2037,7 @@
     if(f.rubrosCliente.length){
       if(!f.rubrosCliente.includes(normalizeRubroKey(c.rubro || ""))) return false;
     }
+    if(!matchesAbc(c)) return false;
     const creadoFecha = (c.created_at || "").slice(0, 10);
     const modFecha = (c.updated_at || "").slice(0, 10);
     if(f.creadoDesde && creadoFecha < f.creadoDesde) return false;
@@ -2049,7 +2122,45 @@
   const carteraFiltersEl = document.getElementById("carteraFilters");
   const reportesWrapEl = document.getElementById("reportesWrap");
 
+  const abcFilterBarEl = document.getElementById("abcFilterBar");
   let lastPage = null;
+
+  const ABC_FILTRO_OPCIONES = [
+    { key:"todos", label:"Todos", color:"" },
+    { key:"A", label:"A", color:"#ff8078" },
+    { key:"B", label:"B", color:"#f4d24e" },
+    { key:"C", label:"C", color:"#5fe083" },
+    { key:"sin", label:"Sin clasificar", color:"#8b8b92" },
+  ];
+
+  // Filas que muestra la página actual con todos los filtros MENOS el ABC,
+  // para que cada pastilla diga cuántos quedarían al elegirla.
+  function filasParaConteoAbc(){
+    const prev = state.filtros.abc;
+    state.filtros.abc = "todos";
+    try{
+      if(state.page === "cartera") return clientesFiltered();
+      if(state.page === "contactados") return leadsContactadosFlat();
+      return currentColumns().flatMap(c => leadsForColumn(c.key));
+    } finally { state.filtros.abc = prev; }
+  }
+
+  function renderAbcFilterBar(){
+    const visible = ["pipeline", "recontacto", "contactados", "cartera"].includes(state.page);
+    abcFilterBarEl.style.display = visible ? "flex" : "none";
+    if(!visible) return;
+    const filas = filasParaConteoAbc();
+    const counts = { todos: filas.length, A:0, B:0, C:0, sin:0 };
+    filas.forEach(r => { counts[r.clasificacion_abc || "sin"]++; });
+    abcFilterBarEl.innerHTML = `<span class="abc-filter-label">Prioridad ABC</span>` +
+      ABC_FILTRO_OPCIONES.map(o => `
+        <button type="button" class="mobile-tab ${state.filtros.abc === o.key ? "active" : ""}" data-abc-filtro="${o.key}">
+          ${o.color ? `<span class="abc-dot" style="background:${o.color}"></span>` : ""}${escapeHtml(o.label)} <span class="count">${counts[o.key]}</span>
+        </button>`).join("");
+    abcFilterBarEl.querySelectorAll("[data-abc-filtro]").forEach(btn => {
+      btn.addEventListener("click", () => { state.filtros.abc = btn.dataset.abcFiltro; render(); });
+    });
+  }
 
   function render(){
     renderPageToggle();
@@ -2094,6 +2205,7 @@
       renderMobileTabs();
       renderBoard();
     }
+    renderAbcFilterBar();
     lastPage = state.page;
   }
 
@@ -2449,7 +2561,7 @@
   function abcBadgeHtml(value, id, table, readOnly){
     const v = value || "";
     const cls = v ? "abc-" + v.toLowerCase() : "";
-    if(readOnly) return v ? `<span class="abc-badge ${cls}" title="Clasificación ABC">${v}</span>` : "";
+    if(readOnly) return `<span class="abc-badge ${cls}" title="Clasificación ABC">${v || "—"}</span>`;
     return `<button type="button" class="abc-badge ${cls}" data-abc-id="${id}" data-abc-table="${table}" data-abc-value="${v}" title="Clasificación ABC — click para cambiar" onclick="event.stopPropagation()">${v || "—"}</button>`;
   }
 
@@ -2775,6 +2887,7 @@
       rubros: esCliente ? state.filtros.rubros : [],
       rubrosCliente: esCliente ? [] : state.filtros.rubrosCliente,
       creadoDesde: "", creadoHasta: "", modDesde: "", modHasta: "",
+      abc: state.filtros.abc,
     };
     renderFiltrosBadge();
     filtrosOverlay.classList.remove("open");
@@ -2790,6 +2903,7 @@
       creadoHasta: filtroCreadoHasta.value || "",
       modDesde: filtroModDesde.value || "",
       modHasta: filtroModHasta.value || "",
+      abc: state.filtros.abc,
     };
     renderFiltrosBadge();
     filtrosOverlay.classList.remove("open");
@@ -2879,6 +2993,17 @@
     resultado: document.getElementById("in_resultado"),
     notas: document.getElementById("in_notas"),
   };
+  // Selector ABC del modal (botones, no <select>): valor en data-value.
+  const abcSeg = document.getElementById("in_abc");
+  function setAbcSeg(v){
+    abcSeg.dataset.value = v || "";
+    abcSeg.querySelectorAll("button").forEach(b => {
+      const on = b.dataset.abc === (v || "");
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-checked", on ? "true" : "false");
+    });
+  }
+  abcSeg.querySelectorAll("button").forEach(b => b.addEventListener("click", () => setAbcSeg(b.dataset.abc)));
   const fieldWraps = {
     empresa: document.getElementById("f_empresa"),
     contacto: document.getElementById("f_contacto"),
@@ -3042,12 +3167,14 @@
     fields.fuente.value = lead ? lead.fuente : "";
     fields.fecha.value = lead ? (lead.fecha_contacto || "") : today();
     fields.resultado.value = lead ? lead.resultado : "sin_respuesta";
+    setAbcSeg(lead ? lead.clasificacion_abc : "");
     fields.notas.value = lead ? lead.notas : "";
     fieldWraps.empresa.classList.remove("invalid");
 
     // Todos los campos se bloquean o se liberan juntos. Ni la clasificación
     // ABC ni las Notas dependen ya de la etapa: se editan en cualquiera.
     Object.keys(fields).forEach(key => { fields[key].disabled = soloLectura; });
+    abcSeg.querySelectorAll("button").forEach(b => { b.disabled = soloLectura; });
     leadContacto2.load(lead && lead.contacto2_nombre, lead && lead.contacto2_telefono);
     leadContacto2.setLocked(soloLectura);
 
@@ -3466,6 +3593,7 @@
         fuente: fields.fuente.value.trim(),
         fecha_contacto: fields.fecha.value || null,
         resultado: fields.resultado.value,
+        clasificacion_abc: abcSeg.dataset.value || null,
         notas: fields.notas.value.trim(),
         etapa: newLeadEtapa,
         archived: false,
@@ -3493,6 +3621,7 @@
         fuente: fields.fuente.value.trim(),
         fecha_contacto: fields.fecha.value || null,
         resultado: fields.resultado.value,
+        clasificacion_abc: abcSeg.dataset.value || null,
         notas: fields.notas.value.trim(),
         ...leadContacto2.values(),
       };
@@ -3857,6 +3986,7 @@
       .from("notificaciones")
       .select("*")
       .eq("destinatario_email", state.notifEmailCompartido)
+      .eq("eliminada", false)
       .order("created_at", { ascending: false })
       .limit(100);
     if(error){ console.error(error); return; }
@@ -3909,16 +4039,23 @@
     }
     const list = notificacionesFiltradas();
     notifList.innerHTML = list.length
-      ? list.map(n => `
+      ? list.map(n => {
+        const row = `
         <div class="archive-row notif-row ${n.leida ? "" : "notif-unread"}" data-id="${n.id}">
           <div class="info">
             <b>${escapeHtml(n.titulo)}</b>
             <span>${escapeHtml(n.mensaje)}</span>
             <span>${formatDateTime(n.created_at)}</span>
           </div>
-          ${soloLectura ? "" : `<button type="button" class="modal-close notif-delete-btn" data-id="${n.id}" title="Borrar"><svg viewBox="0 0 24 24" fill="none"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>`}
-        </div>
-      `).join("")
+          ${soloLectura ? "" : `<button type="button" class="notif-more-btn" data-id="${n.id}" title="Más opciones" aria-label="Más opciones" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg></button>`}
+        </div>`;
+        return soloLectura ? row : `
+        <div class="notif-swipe" data-id="${n.id}">
+          <div class="notif-swipe-bg del">Eliminar</div>
+          <div class="notif-swipe-bg read">${n.leida ? "Ya leída" : "Marcar leída"}</div>
+          ${row}
+        </div>`;
+      }).join("")
       : `<div class="archive-empty">${notifListaActiva().length ? "Ninguna notificación coincide con el filtro." : (soloLectura ? "Joaquín no tiene notificaciones." : "No tenés notificaciones.")}</div>`;
     notifList.querySelectorAll(".notif-row .info").forEach(info => {
       info.addEventListener("click", () => {
@@ -3926,17 +4063,125 @@
         if(n) abrirNotificacion(n, soloLectura);
       });
     });
-    notifList.querySelectorAll(".notif-delete-btn").forEach(btn => {
-      btn.addEventListener("click", (e) => { e.stopPropagation(); borrarNotificacion(btn.dataset.id); });
+    notifList.querySelectorAll(".notif-more-btn").forEach(btn => {
+      btn.addEventListener("click", (e) => { e.stopPropagation(); abrirNotifMenu(btn); });
     });
+    notifList.querySelectorAll(".notif-swipe").forEach(wireNotifSwipe);
   }
 
+  /* Menú ⋮ de una notificación */
+  let notifMenuEl = null;
+  function cerrarNotifMenu(){
+    if(!notifMenuEl) return;
+    const btn = notifList.querySelector('.notif-more-btn[aria-expanded="true"]');
+    if(btn) btn.setAttribute("aria-expanded", "false");
+    notifMenuEl.remove();
+    notifMenuEl = null;
+  }
+  function abrirNotifMenu(btn){
+    const yaAbierto = btn.getAttribute("aria-expanded") === "true";
+    cerrarNotifMenu();
+    if(yaAbierto) return;
+    const n = state.notificaciones.find(x => x.id === btn.dataset.id);
+    if(!n) return;
+    const menu = document.createElement("div");
+    menu.className = "notif-menu";
+    menu.setAttribute("role", "menu");
+    menu.innerHTML = `
+      ${n.leida ? "" : `<button type="button" role="menuitem" data-accion="leida">Marcar como leída</button>`}
+      <button type="button" role="menuitem" class="danger" data-accion="eliminar">Eliminar</button>`;
+    document.body.appendChild(menu);
+    const r = btn.getBoundingClientRect();
+    const mw = menu.offsetWidth, mh = menu.offsetHeight;
+    menu.style.left = Math.max(8, Math.min(r.right - mw, window.innerWidth - mw - 8)) + "px";
+    menu.style.top = (r.bottom + 4 + mh > window.innerHeight ? r.top - mh - 4 : r.bottom + 4) + "px";
+    btn.setAttribute("aria-expanded", "true");
+    notifMenuEl = menu;
+    menu.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const b = e.target.closest("[data-accion]");
+      if(!b) return;
+      cerrarNotifMenu();
+      if(b.dataset.accion === "leida") marcarNotificacionLeida(n);
+      else borrarNotificacion(n.id);
+    });
+  }
+  document.addEventListener("click", (e) => { if(notifMenuEl && !notifMenuEl.contains(e.target)) cerrarNotifMenu(); });
+  document.addEventListener("keydown", (e) => { if(e.key === "Escape") cerrarNotifMenu(); });
+  notifList.addEventListener("scroll", cerrarNotifMenu, { passive:true });
+
+  /* Deslizar en el celular: derecha = eliminar, izquierda = marcar leída */
+  const NOTIF_SWIPE_UMBRAL = 90;
+  function wireNotifSwipe(wrap){
+    const row = wrap.querySelector(".notif-row");
+    const bgDel = wrap.querySelector(".notif-swipe-bg.del");
+    const bgRead = wrap.querySelector(".notif-swipe-bg.read");
+    let x0 = 0, y0 = 0, dx = 0, activo = false, horizontal = null;
+    row.addEventListener("touchstart", (e) => {
+      if(e.touches.length !== 1) return;
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+      dx = 0; activo = true; horizontal = null;
+      row.classList.remove("settle");
+    }, { passive:true });
+    row.addEventListener("touchmove", (e) => {
+      if(!activo) return;
+      const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+      if(horizontal === null){
+        if(Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+        horizontal = Math.abs(mx) > Math.abs(my);
+        if(horizontal){ cerrarNotifMenu(); row.classList.add("swiping"); }
+      }
+      if(!horizontal) return;
+      e.preventDefault();
+      dx = mx;
+      row.style.transform = `translateX(${dx}px)`;
+      bgDel.style.opacity = dx > 0 ? Math.min(1, dx / NOTIF_SWIPE_UMBRAL) : 0;
+      bgRead.style.opacity = dx < 0 ? Math.min(1, -dx / NOTIF_SWIPE_UMBRAL) : 0;
+    }, { passive:false });
+    const terminar = () => {
+      if(!activo) return;
+      activo = false;
+      row.classList.remove("swiping");
+      if(!horizontal) return;
+      // Evita que el "click" sintético del final del gesto abra el lead.
+      row._suppressClick = Math.abs(dx) > 8;
+      row.classList.add("settle");
+      const n = state.notificaciones.find(x => x.id === wrap.dataset.id);
+      if(dx >= NOTIF_SWIPE_UMBRAL && n){
+        row.style.transform = "translateX(110%)";
+        setTimeout(() => borrarNotificacion(n.id), 200);
+        return;
+      }
+      if(dx <= -NOTIF_SWIPE_UMBRAL && n && !n.leida){
+        marcarNotificacionLeida(n);
+        return;
+      }
+      row.style.transform = "";
+      bgDel.style.opacity = 0; bgRead.style.opacity = 0;
+    };
+    row.addEventListener("touchend", terminar);
+    row.addEventListener("touchcancel", terminar);
+    row.addEventListener("click", (e) => {
+      if(row._suppressClick){ row._suppressClick = false; e.stopPropagation(); e.preventDefault(); }
+    }, true);
+  }
+
+  // Eliminar = borrado lógico (eliminada=true): la fila queda en la base
+  // como marca de "ya avisado" para que el cron diario no la vuelva a crear,
+  // pero no se muestra nunca más (ni en esta sesión ni en las próximas).
   async function borrarNotificacion(id){
+    const previa = state.notificaciones;
     state.notificaciones = state.notificaciones.filter(n => n.id !== id);
     renderNotifBadge();
     renderNotifList();
-    const { error } = await supa.from("notificaciones").delete().eq("id", id);
-    if(error){ console.error(error); toast("No se pudo borrar la notificación"); }
+    const { error } = await supa.from("notificaciones").update({ eliminada: true }).eq("id", id);
+    if(error){
+      console.error(error);
+      state.notificaciones = previa;
+      renderNotifBadge();
+      if(notifOverlay.classList.contains("open")) renderNotifList();
+      toast("No se pudo eliminar la notificación");
+    }
   }
 
   async function marcarNotificacionLeida(n){
@@ -3945,7 +4190,13 @@
     renderNotifBadge();
     if(notifOverlay.classList.contains("open")) renderNotifList();
     const { error } = await supa.from("notificaciones").update({ leida: true }).eq("id", n.id);
-    if(error) console.error(error);
+    if(error){
+      console.error(error);
+      n.leida = false;
+      renderNotifBadge();
+      if(notifOverlay.classList.contains("open")) renderNotifList();
+      toast("No se pudo marcar como leída");
+    }
   }
 
   // soloLectura: notificaciones ajenas (bandeja compartida de Joaquín) —
@@ -3964,7 +4215,7 @@
   }
 
   notifBtn.addEventListener("click", () => { renderNotifList(); notifOverlay.classList.add("open"); });
-  document.getElementById("notifCloseBtn").addEventListener("click", () => notifOverlay.classList.remove("open"));
+  document.getElementById("notifCloseBtn").addEventListener("click", () => { cerrarNotifMenu(); notifOverlay.classList.remove("open"); });
   notifOverlay.addEventListener("click", (e) => { if(e.target === notifOverlay) notifOverlay.classList.remove("open"); });
 
   /* ============ Cartel emergente (estilo macOS) ============ */
@@ -5576,8 +5827,9 @@
     if(!esPropia && !esCompartida) return;
 
     const lista = esPropia ? "notificaciones" : "notificacionesCompartidas";
-    if(payload.eventType === "DELETE"){
-      state[lista] = state[lista].filter(n => n.id !== payload.old.id);
+    if(payload.eventType === "DELETE" || (payload.new && payload.new.eliminada)){
+      const id = payload.eventType === "DELETE" ? payload.old.id : payload.new.id;
+      state[lista] = state[lista].filter(n => n.id !== id);
     } else {
       const idx = state[lista].findIndex(n => n.id === payload.new.id);
       if(idx > -1) state[lista][idx] = payload.new; else state[lista].unshift(payload.new);
@@ -5782,6 +6034,8 @@
     const { data, error } = await supa
       .from("notificaciones")
       .select("*")
+      .eq("destinatario_email", state.userRow.email)
+      .eq("eliminada", false)
       .order("created_at", { ascending: false })
       .limit(100);
     if(error){ console.error(error); return; }
