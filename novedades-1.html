@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Resumen en lenguaje llano de los cambios del CRM de Trimartex entre el 11 y el 16 de septiembre de 2026.">
+<meta name="robots" content="noindex">
+<style>
+  :root{
+    color-scheme: light dark;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  body{ margin:0; }
+  img{ max-width:100%; }
+  [hidden]{ display:none !important; }
+</style>
+<title>Novedades para Tristán</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+</head>
+<body>
+<style>
+  :root{
+    --ground:#eef1f6;
+    --surface:#ffffff;
+    --surface-2:#f7f9fc;
+    --ink:#161c26;
+    --ink-soft:#3f4a5b;
+    --ink-faint:#6d7a8d;
+    --line:#d9e0ea;
+    --line-soft:#e7ecf3;
+    --accent:#0a56c9;
+    --accent-soft:#e3ecfd;
+    --tristan:#7b34b8;
+    --tristan-soft:#f1e7fb;
+    --lock:#8a6a1f;
+    --lock-soft:#fbf1da;
+    --go:#15704a;
+    --go-soft:#e0f2e9;
+
+    /* Colores reales de las columnas del tablero */
+    --col-leads-tristan:#a24ddb;
+    --col-nuevo:#7b8494;
+    --col-contactado:#0a7ae0;
+    --col-cot-pend:#d17e05;
+    --col-cot-env:#b59300;
+    --col-seguimiento:#2596c9;
+    --col-confirmado:#1e9e52;
+    --col-entregado:#2a95c4;
+    --col-baja:#d63a2f;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#12161d;
+      --surface:#1a1f28;
+      --surface-2:#20262f;
+      --ink:#eef2f7;
+      --ink-soft:#c0c9d6;
+      --ink-faint:#8b96a6;
+      --line:#2c3441;
+      --line-soft:#242b36;
+      --accent:#6ba5ff;
+      --accent-soft:#1b2a44;
+      --tristan:#c78ff0;
+      --tristan-soft:#2b1f3b;
+      --lock:#e0bb63;
+      --lock-soft:#33290f;
+      --go:#63d79c;
+      --go-soft:#12301f;
+
+      --col-leads-tristan:#c98ef0;
+      --col-nuevo:#98a2b1;
+      --col-contactado:#5cadf5;
+      --col-cot-pend:#f0ad3e;
+      --col-cot-env:#ecd158;
+      --col-seguimiento:#6ac9ee;
+      --col-confirmado:#57d287;
+      --col-entregado:#6fd0ef;
+      --col-baja:#f4756a;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#12161d;
+    --surface:#1a1f28;
+    --surface-2:#20262f;
+    --ink:#eef2f7;
+    --ink-soft:#c0c9d6;
+    --ink-faint:#8b96a6;
+    --line:#2c3441;
+    --line-soft:#242b36;
+    --accent:#6ba5ff;
+    --accent-soft:#1b2a44;
+    --tristan:#c78ff0;
+    --tristan-soft:#2b1f3b;
+    --lock:#e0bb63;
+    --lock-soft:#33290f;
+    --go:#63d79c;
+    --go-soft:#12301f;
+
+    --col-leads-tristan:#c98ef0;
+    --col-nuevo:#98a2b1;
+    --col-contactado:#5cadf5;
+    --col-cot-pend:#f0ad3e;
+    --col-cot-env:#ecd158;
+    --col-seguimiento:#6ac9ee;
+    --col-confirmado:#57d287;
+    --col-entregado:#6fd0ef;
+    --col-baja:#f4756a;
+  }
+
+  *{ box-sizing:border-box; }
+
+  body{
+    background:var(--ground);
+    color:var(--ink);
+    font-family:"Source Serif 4", Georgia, "Times New Roman", serif;
+    font-size:17px;
+    line-height:1.62;
+    padding-inline:20px;
+    padding-block:44px 72px;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .wrap{ max-width:760px; margin:0 auto; display:flex; flex-direction:column; gap:40px; }
+
+  .eyebrow{
+    font-family:"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    font-size:11.5px; font-weight:500; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--ink-faint); margin:0;
+  }
+
+  h1{
+    font-family:"Archivo", "Helvetica Neue", Arial, sans-serif;
+    font-weight:700; font-size:clamp(30px, 6.4vw, 44px); line-height:1.08;
+    letter-spacing:-.02em; margin:10px 0 0; text-wrap:balance;
+  }
+
+  .lead{ margin:14px 0 0; color:var(--ink-soft); max-width:60ch; }
+  .lead b{ color:var(--ink); font-weight:600; }
+
+  h2{
+    font-family:"Archivo", "Helvetica Neue", Arial, sans-serif;
+    font-weight:600; font-size:20px; letter-spacing:-.01em;
+    margin:0 0 14px; text-wrap:balance;
+  }
+
+  h3{
+    font-family:"Archivo", "Helvetica Neue", Arial, sans-serif;
+    font-weight:600; font-size:15.5px; letter-spacing:-.005em; margin:0;
+  }
+
+  p{ margin:0; }
+
+  /* ---- Bloque destacado: lo que más le cambia el día ---- */
+  .destacado{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-left:4px solid var(--tristan);
+    border-radius:4px;
+    padding:26px 24px;
+    display:flex; flex-direction:column; gap:20px;
+  }
+  .destacado > h2{ margin:0; }
+  .puntos{ display:flex; flex-direction:column; gap:18px; margin:0; padding:0; list-style:none; }
+  .puntos li{ display:grid; grid-template-columns:auto 1fr; gap:0 14px; align-items:baseline; }
+  .puntos .n{
+    font-family:"IBM Plex Mono", ui-monospace, monospace;
+    font-size:12px; font-weight:500; color:var(--tristan);
+    font-variant-numeric:tabular-nums;
+  }
+  .puntos p{ grid-column:2; color:var(--ink-soft); margin-top:3px; }
+
+  /* ---- Tabla de permisos por etapa ---- */
+  .zonas{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:16px; }
+  @media (max-width:560px){ .zonas{ grid-template-columns:1fr; } }
+
+  .zona{
+    background:var(--surface); border:1px solid var(--line); border-radius:4px;
+    padding:20px; display:flex; flex-direction:column; gap:14px;
+  }
+  .zona-head{ display:flex; align-items:center; gap:9px; }
+  .zona-marca{ width:9px; height:9px; border-radius:50%; flex:0 0 auto; }
+  .zona.mirar .zona-marca{ background:var(--lock); }
+  .zona.hacer .zona-marca{ background:var(--go); }
+  .zona-nota{ font-size:15px; color:var(--ink-soft); margin:0; }
+  .zona-nota b{ font-weight:600; color:var(--ink); }
+
+  .chips{ display:flex; flex-wrap:wrap; gap:7px; margin:0; padding:0; list-style:none; }
+  .chip{
+    font-family:"Archivo", Arial, sans-serif;
+    font-size:12.5px; font-weight:500; line-height:1.3;
+    padding:4px 10px 4px 8px; border-radius:20px;
+    border:1px solid var(--line); background:var(--surface-2); color:var(--ink-soft);
+    display:inline-flex; align-items:center; gap:6px;
+  }
+  .chip::before{ content:""; width:7px; height:7px; border-radius:50%; background:var(--dot, var(--ink-faint)); flex:0 0 auto; }
+
+  /* ---- Línea de tiempo por día ---- */
+  .dias{ display:flex; flex-direction:column; gap:0; }
+
+  .dia{
+    display:grid; grid-template-columns:78px 1fr; gap:0 24px;
+    padding-block:26px;
+    border-top:1px solid var(--line-soft);
+  }
+  .dia:first-of-type{ border-top:1px solid var(--line); }
+  @media (max-width:560px){
+    .dia{ grid-template-columns:1fr; gap:12px; }
+  }
+
+  .fecha{
+    font-family:"IBM Plex Mono", ui-monospace, monospace;
+    font-size:12px; font-weight:500; color:var(--ink-faint);
+    letter-spacing:.04em; font-variant-numeric:tabular-nums;
+    padding-top:4px;
+  }
+  .fecha .dnum{ display:block; font-size:22px; color:var(--ink); letter-spacing:-.02em; line-height:1.1; }
+
+  .items{ display:flex; flex-direction:column; gap:16px; margin:0; padding:0; list-style:none; }
+  .items li{ display:flex; flex-direction:column; gap:4px; }
+  .items p{ color:var(--ink-soft); font-size:16px; }
+
+  .etiqueta{
+    display:inline-block; align-self:flex-start;
+    font-family:"IBM Plex Mono", ui-monospace, monospace;
+    font-size:10.5px; letter-spacing:.09em; text-transform:uppercase;
+    padding:2px 7px; border-radius:3px; margin-bottom:2px;
+  }
+  .et-nuevo{ background:var(--accent-soft); color:var(--accent); }
+  .et-arreglo{ background:var(--go-soft); color:var(--go); }
+
+  /* ---- Cierre ---- */
+  .cierre{
+    background:var(--surface-2); border:1px solid var(--line-soft); border-radius:4px;
+    padding:22px 24px; display:flex; flex-direction:column; gap:10px;
+  }
+  .cierre p{ color:var(--ink-soft); font-size:16px; max-width:58ch; }
+
+  .pie{
+    font-family:"IBM Plex Mono", ui-monospace, monospace;
+    font-size:11.5px; color:var(--ink-faint); letter-spacing:.03em;
+    border-top:1px solid var(--line-soft); padding-top:20px; margin:0;
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">CRM Trimartex · 11 al 16 de septiembre</p>
+    <h1>Novedades para Tristán</h1>
+    <p class="lead">Esto es lo que cambió en el CRM en los últimos cinco días, contado sin tecnicismos. Lo más importante: <b>quedó definido en blanco sobre negro qué leads podés tocar y cuáles no</b>, y ahora casi todo lo que hacés se puede deshacer.</p>
+  </header>
+
+  <section class="destacado">
+    <h2>Lo que más te cambia el día a día</h2>
+    <ol class="puntos">
+      <li>
+        <span class="n">01</span>
+        <h3>Donde antes solo podías cargar notas, ahora manejás el lead entero</h3>
+        <p>Desde <em>Cotización pendiente</em> en adelante (y en <em>Leads Tristán</em>) podés editar todos los campos, mover la tarjeta a cualquier etapa, eliminarla y archivarla. Antes solo te dejaba tocar Resultado, Notas y Fecha de contacto.</p>
+      </li>
+      <li>
+        <span class="n">02</span>
+        <h3>Botón "Volver": deshace el último movimiento, sin apuro</h3>
+        <p>Si moviste una tarjeta de etapa por error, abrís el lead y tocás <em>↩ Volver a…</em>: regresa a donde estaba. No hay reloj en contra — sirve hoy, mañana o la semana que viene.</p>
+      </li>
+      <li>
+        <span class="n">03</span>
+        <h3>Ordenás las tarjetas a mano, como en un pizarrón</h3>
+        <p>Dentro de una misma columna podés arrastrar una tarjeta hacia arriba o hacia abajo para ponerla donde quieras. El orden queda guardado y lo ven los dos.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Qué podés hacer en cada etapa de la Cartera compartida</h2>
+    <div class="zonas">
+
+      <div class="zona mirar">
+        <div class="zona-head">
+          <span class="zona-marca"></span>
+          <h3>Solo mirás</h3>
+        </div>
+        <ul class="chips">
+          <li class="chip" style="--dot:var(--col-nuevo)">Nuevo</li>
+          <li class="chip" style="--dot:var(--col-contactado)">Contactado</li>
+        </ul>
+        <p class="zona-nota">Estas dos etapas son de Joaquín. Podés <b>abrir la tarjeta y leerla completa</b>, pero no se mueve, no se edita, no se elimina ni se archiva. Los botones directamente no aparecen.</p>
+      </div>
+
+      <div class="zona hacer">
+        <div class="zona-head">
+          <span class="zona-marca"></span>
+          <h3>Hacés todo</h3>
+        </div>
+        <ul class="chips">
+          <li class="chip" style="--dot:var(--col-leads-tristan)">Leads Tristán</li>
+          <li class="chip" style="--dot:var(--col-cot-pend)">Cotización pendiente</li>
+          <li class="chip" style="--dot:var(--col-cot-env)">Cotización enviada</li>
+          <li class="chip" style="--dot:var(--col-seguimiento)">Seguimiento</li>
+          <li class="chip" style="--dot:var(--col-confirmado)">Pedido confirmado</li>
+          <li class="chip" style="--dot:var(--col-entregado)">Entregado</li>
+          <li class="chip" style="--dot:var(--col-baja)">Baja</li>
+        </ul>
+        <p class="zona-nota">Mover, editar, eliminar, archivar — y <b>deshacer cualquiera de esas cosas cuando quieras</b>. Los mismos permisos que tiene Joaquín.</p>
+      </div>
+
+    </div>
+    <p class="lead" style="margin-top:16px;">Si Joaquín vuelve a mandar un lead a <em>Contactado</em>, esa tarjeta pasa otra vez a modo consulta. Tu <b>Gestión Privada</b> sigue siendo enteramente tuya: ahí siempre pudiste y seguís pudiendo hacer todo.</p>
+  </section>
+
+  <section>
+    <h2>Día por día</h2>
+    <div class="dias">
+
+      <article class="dia">
+        <div class="fecha"><span class="dnum">16</span>septiembre</div>
+        <ul class="items">
+          <li>
+            <span class="etiqueta et-nuevo">Nuevo</span>
+            <h3>Permisos por etapa, de verdad</h3>
+            <p>La regla de arriba ya no es solo un acuerdo: está grabada en la base de datos. Aunque alguien intente saltearla, el sistema no lo permite.</p>
+          </li>
+          <li>
+            <span class="etiqueta et-nuevo">Nuevo</span>
+            <h3>La misma barra de botones que Joaquín</h3>
+            <p><em>Eliminar</em> a la izquierda, <em>Volver</em> en el medio, <em>Archivar</em> a la derecha. Idéntica en la Cartera compartida y en tu Gestión Privada, así no tenés que acordarte de dos lugares distintos.</p>
+          </li>
+          <li>
+            <span class="etiqueta et-nuevo">Nuevo</span>
+            <h3>Arrastrar tarjetas para ordenarlas</h3>
+            <p>Mientras arrastrás aparece una línea que te muestra exactamente dónde va a caer la tarjeta.</p>
+          </li>
+          <li>
+            <span class="etiqueta et-arreglo">Arreglo</span>
+            <h3>Las notas y la clasificación A/B/C ya no se traban</h3>
+            <p>Antes se bloqueaban según la etapa del lead. Ahora las editás en cualquier momento, esté donde esté la tarjeta.</p>
+          </li>
+          <li>
+            <span class="etiqueta et-arreglo">Arreglo</span>
+            <h3>Novedades de contacto: por fin usables</h3>
+            <p>Antes solo aparecían en <em>Contactado</em>, solo las cargaba Joaquín y, una vez escritas, no se tocaban más. Ahora las ves y las cargás en cualquier etapa, <b>también en tu Gestión Privada</b>, y podés volver después a agregar la respuesta del cliente, corregirla o borrarla.</p>
+          </li>
+        </ul>
+      </article>
+
+      <article class="dia">
+        <div class="fecha"><span class="dnum">15</span>septiembre</div>
+        <ul class="items">
+          <li>
+            <span class="etiqueta et-nuevo">Nuevo</span>
+            <h3>Botón "Devolver"</h3>
+            <p>Saca un lead de <em>Leads Tristán</em> y lo manda de vuelta a donde vino: a Cartera o a tu Gestión Privada.</p>
+          </li>
+          <li>
+            <span class="etiqueta et-nuevo">Nuevo</span>
+            <h3>40 segundos para arrepentirte</h3>
+            <p>Si eliminás un lead que vos habías mandado a <em>Leads Tristán</em>, aparece abajo un cartel con 40 segundos para devolverlo a su lugar de origen.</p>
+          </li>
+          <li>
+            <span class="etiqueta et-nuevo">Nuevo</span>
+            <h3>Aviso cuando Joaquín te devuelve un lead</h3>
+            <p>Si Joaquín saca un lead de <em>Leads Tristán</em> y te lo devuelve, te llega la notificación automáticamente. No hace falta que estés mirando el tablero.</p>
+          </li>
+          <li>
+            <span class="etiqueta et-arreglo">Arreglo</span>
+            <h3>Los carteles de notificación dejaron de molestar</h3>
+            <p>Ya no se repiten cada vez que volvés a la pestaña, y el botón <em>Cerrar todas</em> ya no queda pegado en pantalla.</p>
+          </li>
+        </ul>
+      </article>
+
+      <article class="dia">
+        <div class="fecha"><span class="dnum">14</span>septiembre</div>
+        <ul class="items">
+          <li>
+            <span class="etiqueta et-nuevo">Nuevo</span>
+            <h3>Filtrar por clasificación A / B / C</h3>
+            <p>En los tableros podés dejar a la vista solo los A, solo los B, etc.</p>
+          </li>
+          <li>
+            <span class="etiqueta et-nuevo">Nuevo</span>
+            <h3>Elegís cómo y cuándo te avisa</h3>
+            <p>Configurás si querés los avisos dentro del CRM, por email o las dos cosas, y a los cuántos días sin movimiento te tiene que avisar según la etapa.</p>
+          </li>
+          <li>
+            <span class="etiqueta et-nuevo">Nuevo</span>
+            <h3>Segundo contacto por lead</h3>
+            <p>Podés guardar un nombre y teléfono alternativo, para cuando el titular no atiende.</p>
+          </li>
+          <li>
+            <span class="etiqueta et-nuevo">Nuevo</span>
+            <h3>Mandar un cliente de Cartera al pipeline</h3>
+            <p>Un asistente te pregunta a dónde va (Cartera o Gestión Privada) y en qué etapa arranca, en vez de cargarlo de nuevo a mano.</p>
+          </li>
+          <li>
+            <span class="etiqueta et-nuevo">Nuevo</span>
+            <h3>Podés eliminar tus propios leads compartidos</h3>
+            <p>Los que vos mandaste a <em>Leads Tristán</em>, antes de que Joaquín los trabaje.</p>
+          </li>
+        </ul>
+      </article>
+
+      <article class="dia">
+        <div class="fecha"><span class="dnum">11</span>septiembre</div>
+        <ul class="items">
+          <li>
+            <span class="etiqueta et-arreglo">Arreglo</span>
+            <h3>Se caían leads al guardarlos</h3>
+            <p>Pasaba cuando el rubro del lead no estaba en la lista del formulario. Ya está corregido: la lista ahora incluye todos los rubros que se usan en Cartera, más <em>Construcción</em>.</p>
+          </li>
+          <li>
+            <span class="etiqueta et-nuevo">Nuevo</span>
+            <h3>El campo Rubro se busca escribiendo</h3>
+            <p>Empezás a tipear y te filtra las opciones, en vez de bajar por una lista larga.</p>
+          </li>
+          <li>
+            <span class="etiqueta et-nuevo">Nuevo</span>
+            <h3>Los emails de aviso llegan con formato</h3>
+            <p>Antes eran texto pelado; ahora llegan armados y se leen bien desde el celular.</p>
+          </li>
+        </ul>
+      </article>
+
+    </div>
+  </section>
+
+  <section class="cierre">
+    <h2 style="margin:0;">Si algo no te cierra</h2>
+    <p>Todo esto ya está publicado y funcionando: no hay que instalar nada, alcanza con recargar la página del CRM. Si ves algo que no responde como esperabas — un botón que no aparece donde debería, una tarjeta que no te deja moverla — anotalo y avisá, que se corrige.</p>
+  </section>
+
+  <p class="pie">Resumen preparado el 16/09/2026 · 17 cambios entre el 11 y el 16 de septiembre</p>
+
+</div>
+</body>
+</html>

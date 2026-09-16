@@ -2,6 +2,13 @@
   "buildCommand": "bash build-env.sh",
   "outputDirectory": ".",
   "rewrites": [
-    { "source": "/", "destination": "/trimartex-crm.html" }
+    {
+      "source": "/",
+      "destination": "/trimartex-crm.html"
+    },
+    {
+      "source": "/novedades-1",
+      "destination": "/novedades-1.html"
+    }
   ]
 }
