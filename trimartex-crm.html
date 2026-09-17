@@ -666,6 +666,10 @@
   .cierre-btn.active-alta{ background: var(--danger-soft); border-color: rgba(255,69,58,0.4); color:#ff8078; }
   .cierre-btn.active-media{ background: var(--warn-soft); border-color: rgba(255,214,10,0.4); color:#f4d24e; }
   .cierre-btn.active-baja{ background: var(--positive-soft); border-color: rgba(48,209,88,0.4); color:#5fe083; }
+  .cierre-btn.active-abc-A{ background: var(--danger-soft); border-color: rgba(255,69,58,0.4); color:#ff8078; }
+  .cierre-btn.active-abc-B{ background: var(--warn-soft); border-color: rgba(255,214,10,0.4); color:#f4d24e; }
+  .cierre-btn.active-abc-C{ background: var(--positive-soft); border-color: rgba(48,209,88,0.4); color:#5fe083; }
+  .cierre-btn.active-abc-{ background: var(--surface-2); border-color: var(--border); color:var(--text-dim); }
   .cierre-btn.active-joaquin{ background: var(--accent-soft); border-color: rgba(10,132,255,0.4); color:#7ab8ff; }
   .cierre-btn.active-tristan{ background: rgba(191,90,242,0.14); border-color: rgba(191,90,242,0.4); color:#d79bfa; }
   .cierre-btn.active-ambos{ background: rgba(150,150,160,0.16); border-color: rgba(150,150,160,0.4); color:#dcdce0; }
@@ -1173,6 +1177,11 @@
           <label id="ticketLabel">Ticket estimado</label>
           <input type="number" id="in_ticket" min="0" step="1000" placeholder="0">
         </div>
+      </div>
+
+      <div class="field" id="f_abc">
+        <label>Prioridad ABC</label>
+        <div class="cierre-seg" id="abcSeg"></div>
       </div>
 
       <div class="field" id="f_fuente">
@@ -2200,7 +2209,7 @@
     const desde = new Date(Date.now() - 7 * 86400000).toISOString();
     const [histRes, novRes] = await Promise.all([
       supa.from("lead_history").select("ts, label, leads(empresa)").gte("ts", desde).order("ts", { ascending: false }).limit(200),
-      supa.from("lead_novedades").select("contactado_at, mensaje, respuesta, leads(empresa)").gte("contactado_at", desde).order("contactado_at", { ascending: false }).limit(200),
+      supa.from("lead_novedades").select("contactado_at, mensaje, respuesta, leads(empresa)").not("lead_id", "is", null).gte("contactado_at", desde).order("contactado_at", { ascending: false }).limit(200),
     ]);
     if(histRes.error) console.error(histRes.error);
     if(novRes.error) console.error(novRes.error);
@@ -2921,18 +2930,26 @@
     leadContacto2.setLocked(isClientMode && !isNew);
 
     renderRecontactoBlock(lead, isClientMode);
-    // lead_history y lead_novedades referencian leads(id), no
-    // leads_privados_tristan(id) — no aplican a un lead que todavía no se compartió.
+
+    // Prioridad ABC: en todas las etapas y en los dos espacios. Se bloquea
+    // con el mismo criterio que el resto del formulario en modo Tristán.
+    leadAbcValue = lead ? (lead.clasificacion_abc || null) : null;
+    // Tristán ya podía cambiar el ABC desde el badge de la tarjeta, así que
+    // acá tampoco se le bloquea: el único caso bloqueado es el lead en
+    // "Contactado", donde no tiene ningún permiso de edición.
+    renderAbcSeg(isContactadoLocked);
+
+    // lead_history referencia leads(id), no leads_privados_tristan(id) — no
+    // aplica a un lead que todavía no se compartió. Las novedades sí: desde
+    // la migración 20260915000003 la bitácora existe en los dos espacios.
     if(!state.privateMode){
       renderHistory(lead);
       if(lead) fetchHistory(lead.id).then(() => renderHistory(lead));
-
-      renderNovedades(lead);
-      if(lead) fetchNovedades(lead.id).then(() => renderNovedades(lead));
     } else {
       historyField.style.display = "none";
-      novedadesField.style.display = "none";
     }
+    renderNovedades(lead);
+    if(lead) fetchNovedades(lead.id).then(() => renderNovedades(lead));
 
     // Los recordatorios sí aplican en ambos espacios (compartido y Gestión
     // Privada) — recién se pueden crear una vez que el lead existe.
@@ -3032,6 +3049,34 @@
 
     leadOverlay.classList.add("open");
     setTimeout(() => { if(!fields.empresa.disabled) fields.empresa.focus(); }, 60);
+  }
+
+  // Prioridad ABC dentro del modal: disponible en TODAS las etapas y en los
+  // dos espacios (compartido y Gestión Privada). Antes solo se podía tocar
+  // desde el badge de la tarjeta; acá queda a mano al editar el lead, para
+  // que las notificaciones se puedan filtrar por prioridad desde el día uno.
+  const abcField = document.getElementById("f_abc");
+  const abcSeg = document.getElementById("abcSeg");
+  const ABC_OPTS = [
+    { value: "A", label: "A" },
+    { value: "B", label: "B" },
+    { value: "C", label: "C" },
+    { value: "", label: "Sin prioridad" },
+  ];
+  let leadAbcValue = null;
+
+  function renderAbcSeg(locked){
+    abcField.style.display = "block";
+    abcSeg.innerHTML = ABC_OPTS.map(o => `
+      <button type="button" class="cierre-btn ${(leadAbcValue || "") === o.value ? "active-abc-" + o.value : ""}"
+        data-abc-opt="${o.value}" ${locked ? "disabled" : ""}>${o.label}</button>
+    `).join("");
+    abcSeg.querySelectorAll("[data-abc-opt]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        leadAbcValue = btn.dataset.abcOpt || null;
+        renderAbcSeg(locked);
+      });
+    });
   }
 
   const cierreField = document.getElementById("f_cierre");
@@ -3134,12 +3179,16 @@
   const inNovedadMensaje = document.getElementById("in_novedad_mensaje");
   const inNovedadRespuesta = document.getElementById("in_novedad_respuesta");
 
-  // "Novedades de contacto": bitácora append-only de lead_novedades. Solo
-  // Joaquín puede agregar entradas nuevas (decisión de producto) — Tristán
-  // puede ver el historial para tener contexto, pero el form de alta se
-  // oculta para su rol. Nadie puede editar ni borrar una entrada ya creada.
+  // "Novedades de contacto": bitácora append-only de lead_novedades.
+  // Disponible en TODAS las etapas del lead y en los dos espacios (pipeline
+  // compartido y Gestión Privada de Tristán) — antes solo aparecía en la
+  // etapa "contactado" del compartido.
+  // En el compartido las entradas nuevas las carga Joaquín (decisión de
+  // producto: Tristán las ve para tener contexto). En la Gestión Privada el
+  // dueño del espacio es Tristán, así que ahí las carga él.
+  // Nadie puede editar ni borrar una entrada ya creada.
   function renderNovedades(lead){
-    if(!lead || lead.etapa !== "contactado"){
+    if(!lead){
       novedadesField.style.display = "none";
       return;
     }
@@ -3155,7 +3204,7 @@
       `).join("")
       : `<div class="history-empty">Sin novedades registradas.</div>`;
 
-    if(state.mode === "joaquin"){
+    if(state.privateMode || state.mode === "joaquin"){
       novedadAddForm.style.display = "block";
       inNovedadFecha.value = nowDatetimeLocal();
       inNovedadMensaje.value = "";
@@ -3172,7 +3221,7 @@
   }
 
   document.getElementById("addNovedadBtn").addEventListener("click", async () => {
-    const lead = state.leads.find(l => l.id === state.editingId);
+    const lead = activeLeads().find(l => l.id === state.editingId);
     if(!lead) return;
     const mensaje = inNovedadMensaje.value.trim();
     const respuesta = inNovedadRespuesta.value.trim();
@@ -3180,8 +3229,11 @@
       toast("Escribí al menos el mensaje o la respuesta");
       return;
     }
+    // Cada novedad cuelga de exactamente uno de los dos espacios (ver
+    // migración 20260915000003): lead_id en el compartido, lead_privado_id
+    // en la Gestión Privada.
     const payload = {
-      lead_id: lead.id,
+      ...(state.privateMode ? { lead_privado_id: lead.id } : { lead_id: lead.id }),
       contactado_at: inNovedadFecha.value ? new Date(inNovedadFecha.value).toISOString() : new Date().toISOString(),
       mensaje,
       respuesta,
@@ -3202,7 +3254,7 @@
     const { data, error } = await supa
       .from("lead_novedades")
       .select("*")
-      .eq("lead_id", leadId)
+      .eq(state.privateMode ? "lead_privado_id" : "lead_id", leadId)
       .order("contactado_at", { ascending: false });
     if(error){ console.error(error); return []; }
     state.novedadesCache[leadId] = data || [];
@@ -3235,6 +3287,7 @@
         fecha_contacto: fields.fecha.value || null,
         resultado: fields.resultado.value,
         notas: fields.notas.value.trim(),
+        clasificacion_abc: leadAbcValue || null,
         etapa: newLeadEtapa,
         archived: false,
         cierre: null,
@@ -3256,6 +3309,7 @@
           resultado: fields.resultado.value,
           notas: fields.notas.value.trim(),
           fecha_contacto: fields.fecha.value || null,
+          clasificacion_abc: leadAbcValue || null,
         };
       } else {
         patch = {
@@ -3268,6 +3322,7 @@
           fecha_contacto: fields.fecha.value || null,
           resultado: fields.resultado.value,
           notas: fields.notas.value.trim(),
+          clasificacion_abc: leadAbcValue || null,
           ...leadContacto2.values(),
         };
       }
@@ -5460,14 +5515,18 @@
 
   function handleNovedadRealtime(payload){
     const row = payload.new;
-    if(!state.novedadesCache[row.lead_id]) state.novedadesCache[row.lead_id] = [];
-    if(!state.novedadesCache[row.lead_id].find(n => n.id === row.id)){
-      state.novedadesCache[row.lead_id].unshift(row);
-      state.novedadesCache[row.lead_id].sort((a, b) => new Date(b.contactado_at) - new Date(a.contactado_at));
+    // La fila puede venir del pipeline compartido (lead_id) o de la Gestión
+    // Privada (lead_privado_id) — la caché se indexa por el id del lead sea
+    // cual sea el espacio, que son uuid y nunca colisionan.
+    const leadId = row.lead_id || row.lead_privado_id;
+    if(!leadId) return;
+    if(!state.novedadesCache[leadId]) state.novedadesCache[leadId] = [];
+    if(!state.novedadesCache[leadId].find(n => n.id === row.id)){
+      state.novedadesCache[leadId].unshift(row);
+      state.novedadesCache[leadId].sort((a, b) => new Date(b.contactado_at) - new Date(a.contactado_at));
     }
-    if(state.editingId === row.lead_id){
-      const lead = state.leads.find(l => l.id === row.lead_id);
-      renderNovedades(lead);
+    if(state.editingId === leadId){
+      renderNovedades(activeLeads().find(l => l.id === leadId));
     }
   }
 
