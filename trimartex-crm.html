@@ -531,7 +531,7 @@
   .wa-btn:hover{ background: rgba(37,211,102,0.22); }
   .wa-btn:active{ transform: scale(0.92); }
   .wa-btn svg{ width:14px; height:14px; }
-  .wa-btn.disabled{ opacity:.3; pointer-events:none; }
+  .wa-btn.disabled{ opacity:.3; cursor:not-allowed; }
 
   /* rubro tag colors */
   .tag-seguridad{ background: rgba(255,69,58,0.14); color:#ff8078; }
@@ -1981,6 +1981,7 @@
     return "https://wa.me/" + digits;
   }
 
+  window.crmToast = (msg) => toast(msg);
   function toast(msg){
     const el = document.getElementById("toast");
     el.textContent = msg;
@@ -2256,7 +2257,7 @@
       ${c.rubro ? `<span class="cliente-rubro-tag">${escapeHtml(c.rubro)}</span>` : ""}
       <span class="estado-pill estado-${c.estado}">${c.estado === "activo" ? "Activo" : "Inactivo"}</span>
       ${abcBadgeHtml(c.clasificacion_abc, c.id, "clientes", false)}
-      <a class="wa-btn ${wa ? "" : "disabled"}" href="${wa || "#"}" target="_blank" rel="noopener noreferrer" title="Abrir WhatsApp" onclick="event.stopPropagation()">
+      <a class="wa-btn ${wa ? "" : "disabled"}" href="${wa || "#"}" target="_blank" rel="noopener noreferrer" title="Abrir WhatsApp" onclick="event.stopPropagation(); if(this.classList.contains('disabled')){ event.preventDefault(); window.crmToast('Este contacto no tiene teléfono cargado'); }">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 6.4A8.9 8.9 0 0012 4a9 9 0 00-7.8 13.4L3 21l3.7-1.2A9 9 0 1017.6 6.4zM12 19.5a7.4 7.4 0 01-3.8-1l-.27-.16-2.8.9.9-2.73-.18-.28A7.5 7.5 0 1119.5 12 7.4 7.4 0 0112 19.5zm4.1-5.6c-.22-.11-1.3-.64-1.5-.72s-.35-.11-.5.11-.58.72-.7.86-.25.16-.47.05a6.1 6.1 0 01-1.8-1.1 6.7 6.7 0 01-1.24-1.55c-.13-.22 0-.34.1-.45s.22-.25.33-.38a1.5 1.5 0 00.22-.37.4.4 0 000-.39c-.06-.11-.5-1.2-.68-1.65s-.37-.37-.5-.38h-.43a.83.83 0 00-.6.28 2.5 2.5 0 00-.79 1.87 4.4 4.4 0 00.92 2.3 10 10 0 003.9 3.44c.55.24.98.38 1.31.48a3.1 3.1 0 001.44.09 2.36 2.36 0 001.55-1.1 1.9 1.9 0 00.13-1.1c-.06-.1-.2-.16-.42-.27z"/></svg>
       </a>
     </article>`;
@@ -2625,7 +2626,7 @@
       ${isRecontacto && lead.notas ? `<div class="card-notes-preview">${escapeHtml(lead.notas)}</div>` : ""}
       <div class="card-bottom">
         <span class="card-meta">${lead.fuente ? escapeHtml(lead.fuente) : "&nbsp;"}${lead.fecha_contacto ? " · " + formatDate(lead.fecha_contacto) : ""}</span>
-        <a class="wa-btn ${wa ? "" : "disabled"}" href="${wa || "#"}" target="_blank" rel="noopener noreferrer" title="Abrir WhatsApp" onclick="event.stopPropagation()">
+        <a class="wa-btn ${wa ? "" : "disabled"}" href="${wa || "#"}" target="_blank" rel="noopener noreferrer" title="Abrir WhatsApp" onclick="event.stopPropagation(); if(this.classList.contains('disabled')){ event.preventDefault(); window.crmToast('Este contacto no tiene teléfono cargado'); }">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 6.4A8.9 8.9 0 0012 4a9 9 0 00-7.8 13.4L3 21l3.7-1.2A9 9 0 1017.6 6.4zM12 19.5a7.4 7.4 0 01-3.8-1l-.27-.16-2.8.9.9-2.73-.18-.28A7.5 7.5 0 1119.5 12 7.4 7.4 0 0112 19.5zm4.1-5.6c-.22-.11-1.3-.64-1.5-.72s-.35-.11-.5.11-.58.72-.7.86-.25.16-.47.05a6.1 6.1 0 01-1.8-1.1 6.7 6.7 0 01-1.24-1.55c-.13-.22 0-.34.1-.45s.22-.25.33-.38a1.5 1.5 0 00.22-.37.4.4 0 000-.39c-.06-.11-.5-1.2-.68-1.65s-.37-.37-.5-.38h-.43a.83.83 0 00-.6.28 2.5 2.5 0 00-.79 1.87 4.4 4.4 0 00.92 2.3 10 10 0 003.9 3.44c.55.24.98.38 1.31.48a3.1 3.1 0 001.44.09 2.36 2.36 0 001.55-1.1 1.9 1.9 0 00.13-1.1c-.06-.1-.2-.16-.42-.27z"/></svg>
         </a>
       </div>
@@ -2702,6 +2703,9 @@
 
     cardEl.addEventListener("pointerdown", (e) => {
       if(e.button !== undefined && e.button !== 0 && e.pointerType === "mouse") return;
+      // El pointer capture redirige el click a la card: si el toque empieza en
+      // un link/botón interno (WhatsApp, ABC) no arrancamos el drag.
+      if(e.target.closest("a, button")) return;
       startX = e.clientX; startY = e.clientY; dragging = false;
       cardEl.setPointerCapture(e.pointerId);
 
