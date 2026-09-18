@@ -1549,11 +1549,12 @@
     </div>
     <div class="modal-body">
       <nav class="cartera-filters notif-filtros" id="notifFiltros"></nav>
-      <p class="notif-swipe-hint">Deslizá → para eliminar · ← para marcar como leída</p>
+      <p class="notif-swipe-hint">Deslizá → para eliminar · ← para marcar leída / no leída</p>
       <div class="archive-list" id="notifList"></div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost btn-full" id="notifMarkAllReadBtn">Marcar todas como leídas</button>
+      <button class="btn btn-ghost btn-full" id="notifMarkAllUnreadBtn">Marcar todas como no leídas</button>
     </div>
   </div>
 </div>
@@ -4036,6 +4037,7 @@
     renderNotifFiltros();
     const soloLectura = state.notifModo === "compartida";
     document.getElementById("notifMarkAllReadBtn").style.display = soloLectura ? "none" : "";
+    document.getElementById("notifMarkAllUnreadBtn").style.display = soloLectura ? "none" : "";
     if(!soloLectura && !canalInappActivo()){
       notifList.innerHTML = `<div class="archive-empty">Tenés las notificaciones dentro del CRM desactivadas. Podés reactivarlas en el ícono de configuración (⚙).</div>`;
       return;
@@ -4055,7 +4057,7 @@
         return soloLectura ? row : `
         <div class="notif-swipe" data-id="${n.id}">
           <div class="notif-swipe-bg del">Eliminar</div>
-          <div class="notif-swipe-bg read">${n.leida ? "Ya leída" : "Marcar leída"}</div>
+          <div class="notif-swipe-bg read">${n.leida ? "Marcar no leída" : "Marcar leída"}</div>
           ${row}
         </div>`;
       }).join("")
@@ -4091,7 +4093,7 @@
     menu.className = "notif-menu";
     menu.setAttribute("role", "menu");
     menu.innerHTML = `
-      ${n.leida ? "" : `<button type="button" role="menuitem" data-accion="leida">Marcar como leída</button>`}
+      <button type="button" role="menuitem" data-accion="leida">${n.leida ? "Marcar como no leída" : "Marcar como leída"}</button>
       <button type="button" role="menuitem" class="danger" data-accion="eliminar">Eliminar</button>`;
     document.body.appendChild(menu);
     const r = btn.getBoundingClientRect();
@@ -4105,7 +4107,7 @@
       const b = e.target.closest("[data-accion]");
       if(!b) return;
       cerrarNotifMenu();
-      if(b.dataset.accion === "leida") marcarNotificacionLeida(n);
+      if(b.dataset.accion === "leida") marcarNotificacionLeida(n, !n.leida);
       else borrarNotificacion(n.id);
     });
   }
@@ -4155,8 +4157,8 @@
         setTimeout(() => borrarNotificacion(n.id), 200);
         return;
       }
-      if(dx <= -NOTIF_SWIPE_UMBRAL && n && !n.leida){
-        marcarNotificacionLeida(n);
+      if(dx <= -NOTIF_SWIPE_UMBRAL && n){
+        marcarNotificacionLeida(n, !n.leida);
         return;
       }
       row.style.transform = "";
@@ -4187,18 +4189,18 @@
     }
   }
 
-  async function marcarNotificacionLeida(n){
-    if(n.leida) return;
-    n.leida = true;
+  async function marcarNotificacionLeida(n, leida = true){
+    if(n.leida === leida) return;
+    n.leida = leida;
     renderNotifBadge();
     if(notifOverlay.classList.contains("open")) renderNotifList();
-    const { error } = await supa.from("notificaciones").update({ leida: true }).eq("id", n.id);
+    const { error } = await supa.from("notificaciones").update({ leida }).eq("id", n.id);
     if(error){
       console.error(error);
-      n.leida = false;
+      n.leida = !leida;
       renderNotifBadge();
       if(notifOverlay.classList.contains("open")) renderNotifList();
-      toast("No se pudo marcar como leída");
+      toast(leida ? "No se pudo marcar como leída" : "No se pudo marcar como no leída");
     }
   }
 
@@ -4306,18 +4308,29 @@
     pendientes.slice(0, 5).forEach((n, i) => setTimeout(() => spawnNotifToast(n), i * 220));
   }
 
-  document.getElementById("notifMarkAllReadBtn").addEventListener("click", async () => {
-    const unread = state.notificaciones.filter(n => !n.leida);
-    if(!unread.length) return;
-    unread.forEach(n => n.leida = true);
+  // Marca todas las notificaciones propias como leídas o como no leídas.
+  // Solo toca las eliminadas=false: las que se borraron no deben "revivir".
+  async function marcarTodasNotificaciones(leida){
+    const cambiar = state.notificaciones.filter(n => n.leida !== leida);
+    if(!cambiar.length) return;
+    cambiar.forEach(n => n.leida = leida);
     renderNotifBadge();
     renderNotifList();
     const { error } = await supa.from("notificaciones")
-      .update({ leida: true })
+      .update({ leida })
       .eq("destinatario_email", state.userRow.email)
-      .eq("leida", false);
-    if(error){ console.error(error); toast("No se pudo actualizar"); }
-  });
+      .eq("eliminada", false)
+      .eq("leida", !leida);
+    if(error){
+      console.error(error);
+      cambiar.forEach(n => n.leida = !leida);
+      renderNotifBadge();
+      renderNotifList();
+      toast("No se pudo actualizar");
+    }
+  }
+  document.getElementById("notifMarkAllReadBtn").addEventListener("click", () => marcarTodasNotificaciones(true));
+  document.getElementById("notifMarkAllUnreadBtn").addEventListener("click", () => marcarTodasNotificaciones(false));
 
   notifConfigBtn.addEventListener("click", () => {
     const p = state.preferencias || {
