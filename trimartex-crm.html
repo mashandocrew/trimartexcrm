@@ -52,7 +52,12 @@
   button{ font-family: inherit; }
   input, select, textarea{ font-family: inherit; }
 
-  #app{ height:100dvh; display:flex; flex-direction:column; }
+  /* position:fixed + inset:0 en vez de height:100dvh: la app ocupa siempre
+     exactamente el área visible, y el documento no se puede "correr". En
+     iPhone (Safari y Chrome), al abrir/cerrar el teclado o rebotar al final
+     de una lista, la página quedaba desplazada hacia arriba: el encabezado
+     tapado por la barra del navegador y una franja vacía abajo. */
+  #app{ position:fixed; inset:0; display:flex; flex-direction:column; }
 
   /* ---------- Header ---------- */
   header.topbar{
@@ -924,7 +929,10 @@
   }
 
   @media (max-width: 860px){
-    .board{ display:block; padding: 10px 14px 14px; max-width: 640px; margin: 0 auto; }
+    .board{
+      display:block; max-width: 640px; margin: 0 auto;
+      padding: 10px max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    }
     .column{ display:none; height:100%; border-radius: var(--radius-lg); flex-basis:auto; }
     .column-head{ padding: 12px 14px 8px; }
     .column-body{ padding: 2px 10px 16px; gap:8px; touch-action: pan-y; overscroll-behavior: contain; }
@@ -6397,6 +6405,20 @@
   }
 
   supa.auth.onAuthStateChange((_event, session) => { handleSession(session); });
+
+  // Red de seguridad para iPhone/Android: si el navegador igual corre el
+  // documento (teclado, rebote), se vuelve a su lugar apenas no hay un campo
+  // de texto en uso — con uno enfocado se deja, para que el teclado no lo tape.
+  function escribiendo(){
+    const a = document.activeElement;
+    return !!a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || a.isContentEditable);
+  }
+  function volverArriba(){
+    if((window.scrollY || window.scrollX) && !escribiendo()) window.scrollTo(0, 0);
+  }
+  window.addEventListener("scroll", volverArriba, { passive: true });
+  document.addEventListener("focusout", () => setTimeout(volverArriba, 120));
+  if(window.visualViewport) window.visualViewport.addEventListener("resize", () => setTimeout(volverArriba, 120));
 
   /* ============ Init ============ */
   supa.auth.getSession().then(({ data }) => handleSession(data.session));
