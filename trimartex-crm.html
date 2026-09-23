@@ -650,6 +650,7 @@
   .choice.danger:hover, .choice.danger.selected{ border-color: var(--danger); }
   .wizard-summary{ font-size:13px; line-height:1.55; color: var(--text-dim); background: var(--surface); border-radius:10px; padding:10px 12px; margin-bottom:12px; }
   .wizard-summary b{ color: var(--text); }
+  .wizard-summary b.wizard-danger{ color: var(--danger); }
   .wizard-actions{ display:flex; gap:8px; margin-top:12px; }
   .wizard-actions .btn{ flex:1 1 0; justify-content:center; }
   @media (prefers-reduced-motion: reduce){
@@ -1407,6 +1408,11 @@
       </div>
 
       <div class="field">
+        <label>Fecha última compra</label>
+        <input type="date" id="cin_ultima_compra">
+      </div>
+
+      <div class="field">
         <label>Notas</label>
         <textarea id="cin_notas" placeholder="Observaciones..."></textarea>
       </div>
@@ -2146,22 +2152,25 @@
     return map;
   }
 
+  // "En lead" es un sector propio: un cliente con lead abierto sale de
+  // Activos/Inactivos y solo aparece ahí (y en Todos).
+  function sectorCartera(c, enLead){
+    return enLead[c.id] ? "en_lead" : c.estado;
+  }
+
   function clientesFiltered(){
-    const enLead = state.carteraFilter === "en_lead" ? leadsReactivacionPorCliente() : null;
+    const enLead = leadsReactivacionPorCliente();
     return state.clientes.filter(c =>
-      (state.carteraFilter === "todos" || (enLead ? !!enLead[c.id] : c.estado === state.carteraFilter)) &&
+      (state.carteraFilter === "todos" || sectorCartera(c, enLead) === state.carteraFilter) &&
       matchesSearchCliente(c, state.search) && matchesFiltersCliente(c)
     );
   }
 
   function carteraCounts(){
     const enLead = leadsReactivacionPorCliente();
-    return {
-      todos: state.clientes.length,
-      activo: state.clientes.filter(c => c.estado === "activo").length,
-      inactivo: state.clientes.filter(c => c.estado === "inactivo").length,
-      en_lead: state.clientes.filter(c => enLead[c.id]).length,
-    };
+    const counts = { todos: state.clientes.length, activo: 0, inactivo: 0, en_lead: 0 };
+    state.clientes.forEach(c => { counts[sectorCartera(c, enLead)]++; });
+    return counts;
   }
 
   function tareasFiltered(){
@@ -2329,6 +2338,7 @@
     const sub = [c.contacto, c.rubro].filter(Boolean).join(" · ");
     const ultimoPedido = state.pedidosUltimo[c.id];
     const meta = [
+      c.fecha_ultima_compra ? `Última compra: ${formatDate(c.fecha_ultima_compra)}` : "",
       c.ultimo_contacto_at ? `Último contacto: ${formatDate(c.ultimo_contacto_at)}` : "",
       ultimoPedido ? `Último pedido: ${ultimoPedido.descripcion}` : "",
     ].filter(Boolean).join(" · ");
@@ -5247,6 +5257,7 @@
     telefono: document.getElementById("cin_telefono"),
     rubro: document.getElementById("cin_rubro"),
     ultimoContacto: document.getElementById("cin_ultimo_contacto"),
+    ultimaCompra: document.getElementById("cin_ultima_compra"),
     notas: document.getElementById("cin_notas"),
   };
 
@@ -5311,6 +5322,16 @@
     setCollapsible(enviarWizardEl, false, true);
   }
 
+  // Un inactivo solo tiene sentido en Leads Tristán si ya trae la fecha de
+  // última compra y una nota — a Tristán le sirve llegar con esa info.
+  function faltanDatosLeadsTristan(c, etapa){
+    if(etapa !== "leads_tristan" || c.estado !== "inactivo") return [];
+    return [
+      c.fecha_ultima_compra ? "" : "la fecha de última compra",
+      (c.notas || "").trim() ? "" : "una nota",
+    ].filter(Boolean);
+  }
+
   function wizardChoiceHtml(name, value, title, sub, selected, extraCls){
     return `<button type="button" class="choice${extraCls ? " " + extraCls : ""}${selected ? " selected" : ""}" data-choice="${name}" data-value="${value}"><b>${title}</b><span>${sub}</span></button>`;
   }
@@ -5336,6 +5357,7 @@
         s.etapa = (etapas.find(e => e.key === "nuevo") || etapas.find(e => e.key === "leads_tristan") || etapas[0]).key;
       }
       const destinoLabel = enviarPipelineDestinos().find(d => d.value === s.destino).label;
+      const faltan = faltanDatosLeadsTristan(c, s.etapa);
       html = `<p class="wizard-q">Confirmá el envío</p>
         <div class="wizard-summary">
           <b>${escapeHtml(c.empresa)}</b> se crea como lead en <b>${escapeHtml(destinoLabel)}</b>.<br>
@@ -5344,11 +5366,13 @@
         <div class="field" style="margin-bottom:0;">
           <label for="in_enviar_etapa">Etapa inicial</label>
           <select id="in_enviar_etapa">${etapas.map(e => `<option value="${e.key}"${e.key === s.etapa ? " selected" : ""}>${escapeHtml(e.label)}</option>`).join("")}</select>
-        </div>`;
+        </div>
+        ${faltan.length ? `<div class="wizard-summary" style="margin-top:10px;"><b class="wizard-danger">Para pasarlo a Leads Tristán falta: ${escapeHtml(faltan.join(" y "))}.</b><br>Cargalo en el cliente y volvé a enviarlo.</div>` : ""}`;
     }
 
+    const bloqueado = s.paso === "confirmar" && faltanDatosLeadsTristan(c, s.etapa).length > 0;
     const confirmBtn = s.paso === "confirmar"
-      ? `<button type="button" class="btn btn-accent" data-wiz="confirmar">Enviar como lead</button>`
+      ? `<button type="button" class="btn btn-accent" data-wiz="confirmar"${bloqueado ? " disabled" : ""}>Enviar como lead</button>`
       : "";
     enviarWizardBody.innerHTML = html + `<div class="wizard-actions"><button type="button" class="btn btn-ghost" data-wiz="atras">${idx === 0 ? "Cancelar" : "Atrás"}</button>${confirmBtn}</div>`;
   }
@@ -5383,7 +5407,10 @@
   });
 
   enviarWizardBody.addEventListener("change", (e) => {
-    if(e.target.id === "in_enviar_etapa" && enviarWizardState) enviarWizardState.etapa = e.target.value;
+    if(e.target.id === "in_enviar_etapa" && enviarWizardState){
+      enviarWizardState.etapa = e.target.value;
+      renderEnviarWizard();
+    }
   });
 
   // El rubro de Cartera es texto libre (ver renderRubrosClienteDatalist); el
@@ -5517,6 +5544,7 @@
     clienteContacto2.load(c && c.contacto2_nombre, c && c.contacto2_telefono);
     cFields.rubro.value = c ? (c.rubro || "") : "";
     cFields.ultimoContacto.value = c ? (c.ultimo_contacto_at || "") : "";
+    cFields.ultimaCompra.value = c ? (c.fecha_ultima_compra || "") : "";
     cFields.notas.value = c ? c.notas : "";
     cfEmpresa.classList.remove("invalid");
     clienteEstadoValue = c ? c.estado : "activo";
@@ -5573,6 +5601,7 @@
       rubro: cFields.rubro.value.trim() || null,
       estado: clienteEstadoValue,
       ultimo_contacto_at: cFields.ultimoContacto.value || null,
+      fecha_ultima_compra: cFields.ultimaCompra.value || null,
       notas: cFields.notas.value.trim(),
       ...clienteContacto2.values(),
     };
@@ -5586,9 +5615,11 @@
     } else {
       const c = state.clientes.find(x => x.id === state.editingClienteId);
       if(!c) return;
-      Object.assign(c, payload);
-      const { error } = await supa.from("clientes").update(payload).eq("id", c.id);
+      // select(): el trigger clientes_reclasificar_por_compra puede cambiar
+      // el estado al cargar la fecha de última compra — se toma la fila real.
+      const { data, error } = await supa.from("clientes").update(payload).eq("id", c.id).select().single();
       if(error){ console.error(error); toast("No se pudo guardar el cambio"); return; }
+      Object.assign(c, data);
       toast("Cambios guardados");
     }
     closeClienteModal();
