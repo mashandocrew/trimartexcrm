@@ -52,7 +52,12 @@
   button{ font-family: inherit; }
   input, select, textarea{ font-family: inherit; }
 
-  #app{ height:100dvh; display:flex; flex-direction:column; }
+  /* position:fixed + inset:0 en vez de height:100dvh: la app ocupa siempre
+     exactamente el área visible, y el documento no se puede "correr". En
+     iPhone (Safari y Chrome), al abrir/cerrar el teclado o rebotar al final
+     de una lista, la página quedaba desplazada hacia arriba: el encabezado
+     tapado por la barra del navegador y una franja vacía abajo. */
+  #app{ position:fixed; inset:0; display:flex; flex-direction:column; }
 
   /* ---------- Header ---------- */
   header.topbar{
@@ -109,6 +114,12 @@
   .search-clear svg{ position:static; width:10px; height:10px; }
 
   .spacer{ flex: 1 1 auto; }
+  /* Las acciones van como un bloque: si no entran en la fila (p. ej. Tristán
+     con Gestión Privada en una laptop), bajan juntas a una segunda fila,
+     alineadas a la derecha, en vez de quedar cortadas fuera de la pantalla. */
+  .topbar-actions{ display:flex; align-items:center; gap:14px; margin-left:auto; flex:0 0 auto; }
+  header.topbar{ flex-wrap:wrap; row-gap:10px; }
+  .search-wrap{ min-width:180px; }
 
   .mode-toggle{
     display:flex; align-items:center; gap:8px;
@@ -466,6 +477,19 @@
     transition: background .15s ease, color .15s ease, border-color .15s ease;
   }
   .column-add-btn svg{ width:13px; height:13px; }
+  /* Flechas ‹ › para pasar de etapa en el celular (además de deslizar el
+     dedo a los costados sobre la columna). Solo se muestran en móvil. */
+  .col-nav{
+    display:none; flex:0 0 auto; width:30px; height:30px; border-radius:50%; padding:0;
+    border:1px solid var(--border); background: var(--surface); color: var(--text-dim);
+    align-items:center; justify-content:center; cursor:pointer;
+  }
+  .col-nav svg{ width:14px; height:14px; }
+  .col-nav:disabled{ opacity:.3; cursor:default; }
+  .column.swipe-in-left{ animation: swipeInLeft .2s ease; }
+  .column.swipe-in-right{ animation: swipeInRight .2s ease; }
+  @keyframes swipeInLeft{ from{ opacity:.4; transform: translateX(24px); } to{ opacity:1; transform:none; } }
+  @keyframes swipeInRight{ from{ opacity:.4; transform: translateX(-24px); } to{ opacity:1; transform:none; } }
   .column-add-btn:hover{ background: var(--accent); color:#fff; border-color: var(--accent); }
   .column-body{
     flex:1 1 auto; overflow-y:auto; padding: 4px 10px 14px;
@@ -519,6 +543,7 @@
     100%{ transform: scale(1); }
   }
   .card-top{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:6px; }
+  .card-top > .card-ident{ flex:1 1 auto; min-width:0; }
   .card-company{ font-size:14px; font-weight:650; letter-spacing:-0.01em; line-height:1.25; word-break:break-word; }
   .card-contact{ font-size:12px; color:var(--text-dim); margin-top:1px; }
   .card-tag{
@@ -542,6 +567,28 @@
   .wa-btn:active{ transform: scale(0.92); }
   .wa-btn svg{ width:14px; height:14px; }
   .wa-btn.disabled{ opacity:.3; cursor:not-allowed; }
+  .card-bottom .card-meta{ flex:1 1 auto; min-width:0; }
+  .drag-handle{
+    display:none; flex:0 0 auto; width:34px; height:34px; border-radius:9px;
+    align-items:center; justify-content:center; color:var(--text-faint);
+    background: var(--surface-2); border:1px solid var(--border);
+    touch-action:none; cursor:grab;
+  }
+  .drag-handle svg{ width:16px; height:16px; }
+
+  /* En pantallas táctiles: el dedo sobre una tarjeta scrollea la columna
+     (antes touch-action:none lo bloqueaba y era casi imposible scrollear).
+     Para mover un lead: arrastrar desde el asa ⋮⋮, o mantener apretada la
+     tarjeta medio segundo y arrastrar. */
+  @media (pointer: coarse){
+    .lead-card{ touch-action: pan-y; -webkit-touch-callout:none; cursor:default; }
+    .lead-card:hover{ border-color: var(--border); }
+    .drag-handle{ display:flex; }
+    .lead-card.long-press{ transform: scale(0.98); border-color: var(--accent); }
+    .wa-btn{ width:34px; height:34px; border-radius:9px; }
+    .wa-btn svg{ width:16px; height:16px; }
+  }
+  body.is-dragging, body.is-dragging *{ user-select:none; -webkit-user-select:none; }
 
   /* rubro tag colors */
   .tag-seguridad{ background: rgba(255,69,58,0.14); color:#ff8078; }
@@ -891,15 +938,56 @@
     #undoBtn{ width:100%; padding:12px; justify-content:center; }
   }
 
+  /* ---------- Botón flotante (mobile) ----------
+     Atajo para cargar un lead (pipeline) o una tarea (tareas) sin subir al
+     header. Se arrastra libremente y queda siempre dentro del viewport con
+     un margen; la posición se recuerda por dispositivo en localStorage. */
+  #fabNew{
+    position: fixed; left:0; top:0; z-index: 90; /* debajo de los overlays (100) */
+    width:56px; height:56px; border-radius:50%; border:none; padding:0;
+    display:none; align-items:center; justify-content:center;
+    background: var(--accent); color:#fff; cursor:pointer;
+    box-shadow: 0 6px 20px rgba(10,132,255,0.45), 0 2px 6px rgba(0,0,0,0.4);
+    touch-action: none; user-select:none; -webkit-user-select:none;
+    transition: transform .12s ease, box-shadow .15s ease;
+  }
+  #fabNew svg{ width:24px; height:24px; pointer-events:none; }
+  #fabNew:active{ background: var(--accent-press); }
+  #fabNew.dragging{ transform: scale(1.08); box-shadow: 0 10px 28px rgba(10,132,255,0.55), 0 4px 10px rgba(0,0,0,0.45); transition:none; }
   @media (max-width: 860px){
-    .board{ display:block; padding: 12px 12px 20px; }
+    #fabNew.fab-on{ display:flex; }
+  }
+
+  @media (max-width: 860px){
+    .board{
+      display:block; max-width: 640px; margin: 0 auto;
+      padding: 10px max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    }
     .column{ display:none; height:100%; border-radius: var(--radius-lg); flex-basis:auto; }
+    .column-head{ padding: 12px 14px 8px; }
+    .column-body{ padding: 2px 10px 16px; gap:8px; touch-action: pan-y; overscroll-behavior: contain; }
+    .lead-card{ padding: 11px 12px; }
+    .card-mid{ margin: 6px 0 2px; }
+    .card-bottom{ margin-top:6px; }
+    .mobile-tabs, .abc-filter-bar{ padding-left:14px; padding-right:14px; }
+    .mobile-tabs{ padding-top:8px; padding-bottom:8px; scroll-behavior:smooth; }
+    .abc-filter-bar{ padding-top:6px; padding-bottom:6px; }
+    .spacer{ display:none; }
+    .mode-toggle{ order: 10; flex-basis:100%; }
+    .topbar-actions{
+      order: 11; flex-basis:100%; min-width:0; margin-left:0;
+      display:flex; align-items:center; gap:8px;
+      overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch;
+    }
+    .topbar-actions::-webkit-scrollbar{ display:none; }
+    .topbar-actions .user-badge{ margin-right:auto; }
+    .col-nav{ display:flex; }
     .column.mobile-active{ display:flex; }
     .column-resize-handle{ display:none; }
     .mobile-tabs{ display:flex; }
     .brand-text span{ display:none; }
-    .search-wrap{ max-width:none; }
-    header.topbar{ padding: 12px 14px; flex-wrap:wrap; row-gap:10px; }
+    .search-wrap{ max-width:none; min-width:0; flex:1 1 0; }
+    header.topbar{ padding: 10px 14px; padding-top: max(10px, env(safe-area-inset-top)); flex-wrap:wrap; row-gap:8px; column-gap:8px; }
     .field-row{ grid-template-columns:1fr; }
     /* Con 6 páginas (pipeline/recontacto/cartera/contactados/reportes/actualizaciones)
        el pill de navegación ya no entra en el ancho de un celular — que
@@ -913,10 +1001,16 @@
   }
   @media (max-width: 520px){
     .brand-text{ display:none; }
+    .brand-mark{ width:34px; height:34px; }
+    .icon-btn{ width:34px; height:34px; }
+    .topbar-actions{ gap:6px; }
+    .user-badge{ padding:5px 10px 5px 8px; font-size:12px; }
+    .search-wrap input{ font-size:16px; padding:7px 12px 7px 34px; }
+    .mode-toggle button{ padding:6px 11px; }
     .btn-primary span{ display:none; }
     .btn-primary{ padding:9px 12px; }
     .privada-toggle span{ display:none; }
-    .privada-toggle{ padding:9px 12px; }
+    .privada-toggle{ padding:8px 10px; }
     .choice{ padding:15px 16px; }
     .choice b{ font-size:15px; }
     .wizard-actions{ flex-direction:column-reverse; }
@@ -1099,6 +1193,9 @@
       <button data-page="actualizaciones" id="actualizacionesToggleBtn">Actualizaciones</button>
     </div>
 
+    <!-- En escritorio es display:contents (no cambia nada); en el celular
+         agrupa las acciones en una sola fila deslizable en vez de 2-3 filas. -->
+    <div class="topbar-actions">
     <button class="privada-toggle" id="privadaToggleBtn" style="display:none;" title="Alternar Gestión Privada">
       <svg viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.7"/><path d="M5 12a7 7 0 0114 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
       <span id="privadaToggleLabel">Gestión Privada</span>
@@ -1149,6 +1246,7 @@
     <button class="icon-btn" id="logoutBtn" title="Cerrar sesión">
       <svg viewBox="0 0 24 24" fill="none"><path d="M15 17l5-5-5-5M20 12H9M12 19H6a1 1 0 01-1-1V6a1 1 0 011-1h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
+    </div>
   </header>
 
   <nav class="mobile-tabs" id="mobileTabs"></nav>
@@ -1186,6 +1284,10 @@
       </div>
     </div>
   </main>
+
+  <button type="button" id="fabNew" title="Nuevo" aria-label="Nuevo">
+    <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+  </button>
 
 </div>
 
@@ -2559,7 +2661,52 @@
         render();
       });
     });
+    centrarPestanaActiva();
   }
+
+  // Deja la pestaña de la etapa activa a la vista (centrada) en la barra
+  // horizontal del celular, así siempre se ve en qué etapa estás.
+  function centrarPestanaActiva(){
+    const activa = mobileTabsEl.querySelector(".mobile-tab.active");
+    if(!activa || !mobileTabsEl.clientWidth) return;
+    const destino = activa.offsetLeft - (mobileTabsEl.clientWidth - activa.offsetWidth) / 2;
+    mobileTabsEl.scrollLeft = Math.max(0, destino);
+  }
+
+  // Pasar a la etapa anterior/siguiente en el celular (flechas o deslizar).
+  function pasarDeColumna(paso){
+    const cols = currentColumns();
+    const idx = cols.findIndex(c => c.key === state.activeMobileColumn);
+    const nuevo = cols[idx + paso];
+    if(!nuevo) return;
+    state.activeMobileColumn = nuevo.key;
+    render();
+    const col = boardEl.querySelector(".column.mobile-active");
+    if(col) col.classList.add(paso > 0 ? "swipe-in-left" : "swipe-in-right");
+  }
+
+  // Deslizar el dedo a los costados sobre el tablero cambia de etapa en el
+  // celular. Solo gestos claramente horizontales (el vertical es scroll).
+  (function wireSwipeColumnas(){
+    let x0 = null, y0 = 0, t0 = 0;
+    boardEl.addEventListener("touchstart", (e) => {
+      x0 = null;
+      if(e.touches.length !== 1 || window.innerWidth > 860) return;
+      if(state.page !== "pipeline" && state.page !== "recontacto") return;
+      if(e.target.closest(".drag-handle")) return;
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now();
+    }, { passive: true });
+    boardEl.addEventListener("touchend", (e) => {
+      if(x0 == null || dragEnCurso || Date.now() - finUltimoDrag < 400) { x0 = null; return; }
+      const t = e.changedTouches[0];
+      const dx = t.clientX - x0, dy = t.clientY - y0;
+      x0 = null;
+      if(Date.now() - t0 > 800) return;
+      if(Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.8) return;
+      pasarDeColumna(dx < 0 ? 1 : -1);
+    }, { passive: true });
+    boardEl.addEventListener("touchcancel", () => { x0 = null; }, { passive: true });
+  })();
 
   function renderBoard(){
     const cols = currentColumns();
@@ -2571,7 +2718,7 @@
     // cada rol, así que alcanza con no mostrarlo en Recontacto (etapas, no
     // destinos de creación).
     const canCreateHere = !isRecontacto;
-    boardEl.innerHTML = cols.map(c => {
+    boardEl.innerHTML = cols.map((c, i) => {
       const leads = leadsForColumn(c.key);
       const activeClass = c.key === state.activeMobileColumn ? "mobile-active" : "";
       const emptyMsg = isRecontacto ? "Sin leads en recontacto acá." : `Sin leads acá${state.search ? " para esta búsqueda" : ""}.`;
@@ -2581,12 +2728,18 @@
       <section class="column ${activeClass}" data-column="${c.key}" style="--col-w:${width}px">
         <div class="column-head">
           <div class="column-head-top">
+            <button type="button" class="col-nav" data-col-step="-1" title="Etapa anterior" ${i === 0 ? "disabled" : ""}>
+              <svg viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
             <span class="dot" style="background:${c.color}"></span>
             <span class="column-title">${escapeHtml(c.label)}</span>
             <span class="column-count">${leads.length}</span>
             ${canCreateHere ? `<button type="button" class="column-add-btn" data-add-column="${c.key}" title="Nuevo lead en ${escapeHtml(c.label)}">
               <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
             </button>` : ""}
+            <button type="button" class="col-nav" data-col-step="1" title="Etapa siguiente" ${i === cols.length - 1 ? "disabled" : ""}>
+              <svg viewBox="0 0 24 24" fill="none"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
           </div>
           ${totalTicket ? `<div class="column-stats">${formatARS(totalTicket)} en total</div>` : ""}
         </div>
@@ -2602,6 +2755,10 @@
         e.stopPropagation();
         openLeadModal(null, btn.dataset.addColumn);
       });
+    });
+
+    boardEl.querySelectorAll(".col-nav").forEach(btn => {
+      btn.addEventListener("click", (e) => { e.stopPropagation(); pasarDeColumna(Number(btn.dataset.colStep)); });
     });
 
     boardEl.querySelectorAll(".column-resize-handle").forEach(handle => {
@@ -2707,7 +2864,7 @@
     return `
     <article class="lead-card${readOnly ? " lead-card-readonly" : ""}" data-id="${lead.id}"${readOnly ? ' data-readonly="1" title="Solo lectura: este lead está en una etapa a cargo de Joaquín"' : ""}>
       <div class="card-top">
-        <div>
+        <div class="card-ident">
           <div class="card-company">${escapeHtml(lead.empresa)}</div>
           ${lead.contacto ? `<div class="card-contact">${escapeHtml(lead.contacto)}</div>` : ""}
           ${(lead.contacto2_nombre || lead.contacto2_telefono) ? `<div class="card-contact card-contact-2">2º: ${escapeHtml(lead.contacto2_nombre || lead.contacto2_telefono)}</div>` : ""}
@@ -2723,6 +2880,9 @@
       ${isRecontacto && lead.notas ? `<div class="card-notes-preview">${escapeHtml(lead.notas)}</div>` : ""}
       <div class="card-bottom">
         <span class="card-meta">${lead.fuente ? escapeHtml(lead.fuente) : "&nbsp;"}${lead.fecha_contacto ? " · " + formatDate(lead.fecha_contacto) : ""}</span>
+        ${readOnly ? "" : `<span class="drag-handle" title="Mantener y arrastrar para mover" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></svg>
+        </span>`}
         <a class="wa-btn ${wa ? "" : "disabled"}" href="${wa || "#"}" target="_blank" rel="noopener noreferrer" title="Abrir WhatsApp" onclick="window.crmOpenWhatsapp(event, this)">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 6.4A8.9 8.9 0 0012 4a9 9 0 00-7.8 13.4L3 21l3.7-1.2A9 9 0 1017.6 6.4zM12 19.5a7.4 7.4 0 01-3.8-1l-.27-.16-2.8.9.9-2.73-.18-.28A7.5 7.5 0 1119.5 12 7.4 7.4 0 0112 19.5zm4.1-5.6c-.22-.11-1.3-.64-1.5-.72s-.35-.11-.5.11-.58.72-.7.86-.25.16-.47.05a6.1 6.1 0 01-1.8-1.1 6.7 6.7 0 01-1.24-1.55c-.13-.22 0-.34.1-.45s.22-.25.33-.38a1.5 1.5 0 00.22-.37.4.4 0 000-.39c-.06-.11-.5-1.2-.68-1.65s-.37-.37-.5-.38h-.43a.83.83 0 00-.6.28 2.5 2.5 0 00-.79 1.87 4.4 4.4 0 00.92 2.3 10 10 0 003.9 3.44c.55.24.98.38 1.31.48a3.1 3.1 0 001.44.09 2.36 2.36 0 001.55-1.1 1.9 1.9 0 00.13-1.1c-.06-.1-.2-.16-.42-.27z"/></svg>
         </a>
@@ -2794,75 +2954,149 @@
   }
 
   /* ============ Drag & drop (pointer events, mouse+touch) ============ */
+  // Mouse: se arrastra la tarjeta directamente (umbral de unos px).
+  // Táctil: el dedo sobre la tarjeta scrollea la columna; para mover un lead
+  // se arrastra desde el asa ⋮⋮ (arranca al instante) o se mantiene apretada
+  // la tarjeta LONG_PRESS_MS y después se arrastra. Mientras se arrastra, la
+  // columna (y el tablero en escritorio) se desplaza sola al acercarse al
+  // borde, para poder reordenar en listas largas con una sola mano.
+  let dragEnCurso = false;
+  let finUltimoDrag = 0;
+  const LONG_PRESS_MS = 400;
+  const AUTOSCROLL_ZONA = 70;
+
+  // Evita que el navegador scrollee mientras hay un arrastre en curso (en
+  // táctil, la tarjeta permite pan-y para poder scrollear normalmente).
+  document.addEventListener("touchmove", (e) => { if(dragEnCurso && e.cancelable) e.preventDefault(); }, { passive: false });
+
   function attachDrag(cardEl){
-    let startX=0, startY=0, dragging=false, ghost=null, origParent=null;
-    const THRESHOLD = 6;
+    cardEl.addEventListener("contextmenu", (e) => { if(e.pointerType !== "mouse") e.preventDefault(); });
 
     cardEl.addEventListener("pointerdown", (e) => {
-      if(e.button !== undefined && e.button !== 0 && e.pointerType === "mouse") return;
-      // El pointer capture redirige el click a la card: si el toque empieza en
-      // un link/botón interno (WhatsApp, ABC) no arrancamos el drag.
-      if(e.target.closest("a, button")) return;
-      startX = e.clientX; startY = e.clientY; dragging = false;
-      cardEl.setPointerCapture(e.pointerId);
+      if(e.pointerType === "mouse" && e.button !== 0) return;
+      const enAsa = !!e.target.closest(".drag-handle");
+      // Si el toque empieza en un link/botón interno (WhatsApp, ABC) no
+      // arrancamos el drag.
+      if(!enAsa && e.target.closest("a, button")) return;
+      if(dragEnCurso) return;
+
+      const tactil = e.pointerType !== "mouse";
+      const THRESHOLD = 6;
+      const pointerId = e.pointerId;
+      let startX = e.clientX, startY = e.clientY, lastX = startX, lastY = startY;
+      let dragging = false, armado = !tactil || enAsa, ghost = null, rafId = null, pressTimer = null;
+
+      if(tactil && !enAsa){
+        pressTimer = setTimeout(() => {
+          pressTimer = null;
+          armado = true;
+          dragEnCurso = true; // desde acá el touchmove ya no scrollea
+          cardEl.classList.add("long-press");
+          if(navigator.vibrate) try{ navigator.vibrate(15); }catch(_){}
+        }, LONG_PRESS_MS);
+      }
+      if(enAsa){ dragEnCurso = true; e.preventDefault(); }
+
+      function empezar(){
+        dragging = true;
+        dragEnCurso = true;
+        cardEl._suppressClick = true;
+        cardEl.classList.remove("long-press");
+        document.body.classList.add("is-dragging");
+        const rect = cardEl.getBoundingClientRect();
+        ghost = cardEl.cloneNode(true);
+        ghost.classList.add("drag-ghost");
+        ghost.classList.remove("long-press");
+        ghost.style.width = rect.width + "px";
+        ghost.dataset.offX = String(startX - rect.left);
+        ghost.dataset.offY = String(startY - rect.top);
+        document.body.appendChild(ghost);
+        cardEl.classList.add("dragging");
+        rafId = requestAnimationFrame(autoScroll);
+      }
+
+      function actualizar(){
+        ghost.style.left = (lastX - Number(ghost.dataset.offX)) + "px";
+        ghost.style.top = (lastY - Number(ghost.dataset.offY)) + "px";
+        const target = findDropTargetAt(lastX, lastY);
+        highlightTarget(target);
+        const esBody = target && target.classList.contains("column-body");
+        marcarInsercion(esBody ? target : null, esBody ? cardAnteLaQueInsertar(target, lastY, cardEl.dataset.id) : null);
+      }
+
+      // Desplazamiento automático cerca de los bordes mientras se arrastra.
+      function autoScroll(){
+        if(!dragging) return;
+        const vel = (dist) => Math.ceil(((AUTOSCROLL_ZONA - dist) / AUTOSCROLL_ZONA) * 14);
+        const body = document.elementFromPoint(lastX, lastY)?.closest(".column-body")
+          || boardEl.querySelector(".column.mobile-active .column-body");
+        let movio = false;
+        if(body){
+          const r = body.getBoundingClientRect();
+          if(lastY < r.top + AUTOSCROLL_ZONA && body.scrollTop > 0){ body.scrollTop -= vel(Math.max(0, lastY - r.top)); movio = true; }
+          else if(lastY > r.bottom - AUTOSCROLL_ZONA && body.scrollTop + body.clientHeight < body.scrollHeight){ body.scrollTop += vel(Math.max(0, r.bottom - lastY)); movio = true; }
+        }
+        const b = boardEl.getBoundingClientRect();
+        if(boardEl.scrollWidth > boardEl.clientWidth){
+          if(lastX < b.left + AUTOSCROLL_ZONA){ boardEl.scrollLeft -= vel(Math.max(0, lastX - b.left)); movio = true; }
+          else if(lastX > b.right - AUTOSCROLL_ZONA){ boardEl.scrollLeft += vel(Math.max(0, b.right - lastX)); movio = true; }
+        }
+        if(movio) actualizar();
+        rafId = requestAnimationFrame(autoScroll);
+      }
 
       function onMove(ev){
-        const dx = ev.clientX - startX, dy = ev.clientY - startY;
-        if(!dragging && Math.hypot(dx,dy) > THRESHOLD){
-          dragging = true;
-          cardEl._suppressClick = true;
-          const rect = cardEl.getBoundingClientRect();
-          ghost = cardEl.cloneNode(true);
-          ghost.classList.add("drag-ghost");
-          ghost.style.width = rect.width + "px";
-          ghost.style.left = rect.left + "px";
-          ghost.style.top = rect.top + "px";
-          document.body.appendChild(ghost);
-          cardEl.classList.add("dragging");
+        if(ev.pointerId !== pointerId) return;
+        lastX = ev.clientX; lastY = ev.clientY;
+        const dist = Math.hypot(lastX - startX, lastY - startY);
+        if(!armado){
+          // Se movió antes de completar el "mantener apretado": es scroll.
+          if(dist > 10) terminar(ev, true);
+          return;
         }
-        if(dragging){
-          const rect = cardEl.getBoundingClientRect();
-          ghost.style.left = (rect.left + (ev.clientX - startX)) + "px";
-          ghost.style.top = (rect.top + (ev.clientY - startY)) + "px";
-          const target = findDropTargetAt(ev.clientX, ev.clientY);
-          highlightTarget(target);
-          marcarInsercion(
-            target && target.classList.contains("column-body") ? target : null,
-            target && target.classList.contains("column-body")
-              ? cardAnteLaQueInsertar(target, ev.clientY, cardEl.dataset.id)
-              : null
-          );
-        }
+        if(!dragging && dist > THRESHOLD) empezar();
+        if(dragging) actualizar();
       }
 
-      function onUp(ev){
-        cardEl.releasePointerCapture(e.pointerId);
+      function terminar(ev, cancelado){
+        if(ev && ev.pointerId !== undefined && ev.pointerId !== pointerId) return;
+        if(pressTimer){ clearTimeout(pressTimer); pressTimer = null; }
         document.removeEventListener("pointermove", onMove);
         document.removeEventListener("pointerup", onUp);
-        document.removeEventListener("pointercancel", onUp);
+        document.removeEventListener("pointercancel", onCancel);
+        if(rafId) cancelAnimationFrame(rafId);
+        cardEl.classList.remove("long-press");
+        document.body.classList.remove("is-dragging");
+        dragEnCurso = false;
+        if(armado) finUltimoDrag = Date.now();
+        if(armado && tactil) cardEl._suppressClick = true;
+        // Si el navegador no manda el click (pasa tras un toque largo), que
+        // el próximo toque normal sí abra la tarjeta.
+        if(cardEl._suppressClick) setTimeout(() => { cardEl._suppressClick = false; }, 350);
 
-        if(dragging){
-          const target = findDropTargetAt(ev.clientX, ev.clientY);
-          let nuevoOrden = null;
-          if(target && target.classList.contains("column-body")){
-            const antes = cardAnteLaQueInsertar(target, ev.clientY, cardEl.dataset.id);
-            nuevoOrden = calcularOrden(target, antes, cardEl.dataset.id);
-          }
-          highlightTarget(null);
-          marcarInsercion(null);
-          if(ghost){ ghost.remove(); ghost = null; }
-          cardEl.classList.remove("dragging");
-          if(target){
-            moveCard(cardEl.dataset.id, target.dataset.column, nuevoOrden);
-          } else {
-            render();
-          }
+        if(!dragging) return;
+        dragging = false;
+        const target = cancelado ? null : findDropTargetAt(lastX, lastY);
+        let nuevoOrden = null;
+        if(target && target.classList.contains("column-body")){
+          const antes = cardAnteLaQueInsertar(target, lastY, cardEl.dataset.id);
+          nuevoOrden = calcularOrden(target, antes, cardEl.dataset.id);
         }
+        highlightTarget(null);
+        marcarInsercion(null);
+        if(ghost){ ghost.remove(); ghost = null; }
+        cardEl.classList.remove("dragging");
+        if(target) moveCard(cardEl.dataset.id, target.dataset.column, nuevoOrden);
+        else render();
       }
+      function onUp(ev){ terminar(ev, false); }
+      // En táctil, si el navegador toma el gesto como scroll manda
+      // pointercancel: si ya estábamos arrastrando, se cancela sin mover.
+      function onCancel(ev){ terminar(ev, true); }
 
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
-      document.addEventListener("pointercancel", onUp);
+      document.addEventListener("pointercancel", onCancel);
     });
   }
 
@@ -3052,7 +3286,102 @@
     privadaToggleBtn.classList.toggle("active-private", isPrivate);
     privadaToggleLabel.textContent = isPrivate ? "Volver al pipeline" : "Gestión Privada";
     importSheetsBtn.style.display = (isPrivate && !isReportes) ? "flex" : "none";
+    updateFab();
   }
+
+  /* ============ Botón flotante (mobile) ============ */
+  // Replica al botón del header que corresponda a la página (Nuevo lead en el
+  // pipeline, Nueva tarea en Tareas): se muestra solo cuando ese botón está
+  // visible, así hereda sus mismos permisos. El CSS lo limita a mobile.
+  const fabNew = document.getElementById("fabNew");
+  const FAB_MARGIN = 12;
+  const FAB_POS_KEY = "trimartex_fab_pos";
+  let fabPos = null; // {x, y} en px, esquina superior izquierda
+  try{ fabPos = JSON.parse(localStorage.getItem(FAB_POS_KEY)); }catch(e){}
+
+  function fabTarget(){
+    if(newTareaBtn.style.display !== "none") return { btn: newTareaBtn, label: "Nueva tarea" };
+    if(newLeadBtn.style.display !== "none") return { btn: newLeadBtn, label: "Nuevo lead" };
+    return null;
+  }
+
+  function updateFab(){
+    const t = fabTarget();
+    fabNew.classList.toggle("fab-on", !!t);
+    if(t){ fabNew.title = t.label; fabNew.setAttribute("aria-label", t.label); }
+    placeFab();
+  }
+
+  // env(safe-area-inset-*) no se puede leer directo desde JS: un elemento
+  // invisible lo toma como padding y se lee su estilo computado.
+  const fabSafeProbe = document.createElement("div");
+  fabSafeProbe.style.cssText = "position:fixed;visibility:hidden;pointer-events:none;width:0;height:0;" +
+    "padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);";
+  document.body.appendChild(fabSafeProbe);
+
+  // Encierra la posición dentro del viewport respetando el margen y el
+  // safe-area (notch / barra de inicio en iOS).
+  function clampFab(x, y){
+    const sa = getComputedStyle(fabSafeProbe);
+    const w = fabNew.offsetWidth || 56, h = fabNew.offsetHeight || 56;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const minX = FAB_MARGIN + (parseFloat(sa.paddingLeft) || 0), maxX = vw - w - FAB_MARGIN - (parseFloat(sa.paddingRight) || 0);
+    const minY = FAB_MARGIN + (parseFloat(sa.paddingTop) || 0), maxY = vh - h - FAB_MARGIN - (parseFloat(sa.paddingBottom) || 0);
+    return {
+      x: Math.min(Math.max(x, minX), Math.max(minX, maxX)),
+      y: Math.min(Math.max(y, minY), Math.max(minY, maxY)),
+    };
+  }
+
+  function placeFab(){
+    if(!fabNew.classList.contains("fab-on")) return;
+    // Por defecto: abajo a la derecha, como un FAB clásico.
+    const start = fabPos || { x: window.innerWidth, y: window.innerHeight - 24 };
+    const p = clampFab(start.x, start.y);
+    fabNew.style.transform = "";
+    fabNew.style.left = p.x + "px";
+    fabNew.style.top = p.y + "px";
+  }
+
+  // Arrastre con pointer events: si el dedo se mueve menos de unos pocos px
+  // se considera un toque y abre el modal; si no, solo reposiciona.
+  let fabDrag = null;
+  fabNew.addEventListener("pointerdown", (e) => {
+    const r = fabNew.getBoundingClientRect();
+    fabDrag = { id: e.pointerId, sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, moved: false };
+    fabNew.setPointerCapture(e.pointerId);
+  });
+  fabNew.addEventListener("pointermove", (e) => {
+    if(!fabDrag || e.pointerId !== fabDrag.id) return;
+    if(!fabDrag.moved && Math.hypot(e.clientX - fabDrag.sx, e.clientY - fabDrag.sy) < 6) return;
+    fabDrag.moved = true;
+    fabNew.classList.add("dragging");
+    const p = clampFab(e.clientX - fabDrag.ox, e.clientY - fabDrag.oy);
+    fabNew.style.left = p.x + "px";
+    fabNew.style.top = p.y + "px";
+  });
+  function endFabDrag(e, cancelled){
+    if(!fabDrag || e.pointerId !== fabDrag.id) return;
+    const moved = fabDrag.moved;
+    fabDrag = null;
+    fabNew.classList.remove("dragging");
+    if(moved){
+      fabPos = { x: parseFloat(fabNew.style.left), y: parseFloat(fabNew.style.top) };
+      try{ localStorage.setItem(FAB_POS_KEY, JSON.stringify(fabPos)); }catch(err){}
+    } else if(!cancelled){
+      const t = fabTarget();
+      if(t) t.btn.click();
+    }
+  }
+  fabNew.addEventListener("pointerup", (e) => endFabDrag(e, false));
+  fabNew.addEventListener("pointercancel", (e) => endFabDrag(e, true));
+  // El click lo dispara pointerup (para distinguirlo del arrastre); se evita
+  // el click nativo pero se mantiene la activación por teclado.
+  fabNew.addEventListener("click", (e) => {
+    if(e.detail === 0){ const t = fabTarget(); if(t) t.btn.click(); }
+  });
+  window.addEventListener("resize", placeFab);
+  window.addEventListener("orientationchange", placeFab);
 
   privadaToggleBtn.addEventListener("click", () => {
     state.privateMode = !state.privateMode;
@@ -6242,6 +6571,20 @@
   }
 
   supa.auth.onAuthStateChange((_event, session) => { handleSession(session); });
+
+  // Red de seguridad para iPhone/Android: si el navegador igual corre el
+  // documento (teclado, rebote), se vuelve a su lugar apenas no hay un campo
+  // de texto en uso — con uno enfocado se deja, para que el teclado no lo tape.
+  function escribiendo(){
+    const a = document.activeElement;
+    return !!a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || a.isContentEditable);
+  }
+  function volverArriba(){
+    if((window.scrollY || window.scrollX) && !escribiendo()) window.scrollTo(0, 0);
+  }
+  window.addEventListener("scroll", volverArriba, { passive: true });
+  document.addEventListener("focusout", () => setTimeout(volverArriba, 120));
+  if(window.visualViewport) window.visualViewport.addEventListener("resize", () => setTimeout(volverArriba, 120));
 
   /* ============ Init ============ */
   supa.auth.getSession().then(({ data }) => handleSession(data.session));
