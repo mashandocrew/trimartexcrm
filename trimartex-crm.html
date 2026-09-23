@@ -928,6 +928,26 @@
     #undoBtn{ width:100%; padding:12px; justify-content:center; }
   }
 
+  /* ---------- Botón flotante (mobile) ----------
+     Atajo para cargar un lead (pipeline) o una tarea (tareas) sin subir al
+     header. Se arrastra libremente y queda siempre dentro del viewport con
+     un margen; la posición se recuerda por dispositivo en localStorage. */
+  #fabNew{
+    position: fixed; left:0; top:0; z-index: 90; /* debajo de los overlays (100) */
+    width:56px; height:56px; border-radius:50%; border:none; padding:0;
+    display:none; align-items:center; justify-content:center;
+    background: var(--accent); color:#fff; cursor:pointer;
+    box-shadow: 0 6px 20px rgba(10,132,255,0.45), 0 2px 6px rgba(0,0,0,0.4);
+    touch-action: none; user-select:none; -webkit-user-select:none;
+    transition: transform .12s ease, box-shadow .15s ease;
+  }
+  #fabNew svg{ width:24px; height:24px; pointer-events:none; }
+  #fabNew:active{ background: var(--accent-press); }
+  #fabNew.dragging{ transform: scale(1.08); box-shadow: 0 10px 28px rgba(10,132,255,0.55), 0 4px 10px rgba(0,0,0,0.45); transition:none; }
+  @media (max-width: 860px){
+    #fabNew.fab-on{ display:flex; }
+  }
+
   @media (max-width: 860px){
     .board{
       display:block; max-width: 640px; margin: 0 auto;
@@ -1254,6 +1274,10 @@
       </div>
     </div>
   </main>
+
+  <button type="button" id="fabNew" title="Nuevo" aria-label="Nuevo">
+    <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+  </button>
 
 </div>
 
@@ -3213,7 +3237,102 @@
     privadaToggleBtn.classList.toggle("active-private", isPrivate);
     privadaToggleLabel.textContent = isPrivate ? "Volver al pipeline" : "Gestión Privada";
     importSheetsBtn.style.display = (isPrivate && !isReportes) ? "flex" : "none";
+    updateFab();
   }
+
+  /* ============ Botón flotante (mobile) ============ */
+  // Replica al botón del header que corresponda a la página (Nuevo lead en el
+  // pipeline, Nueva tarea en Tareas): se muestra solo cuando ese botón está
+  // visible, así hereda sus mismos permisos. El CSS lo limita a mobile.
+  const fabNew = document.getElementById("fabNew");
+  const FAB_MARGIN = 12;
+  const FAB_POS_KEY = "trimartex_fab_pos";
+  let fabPos = null; // {x, y} en px, esquina superior izquierda
+  try{ fabPos = JSON.parse(localStorage.getItem(FAB_POS_KEY)); }catch(e){}
+
+  function fabTarget(){
+    if(newTareaBtn.style.display !== "none") return { btn: newTareaBtn, label: "Nueva tarea" };
+    if(newLeadBtn.style.display !== "none") return { btn: newLeadBtn, label: "Nuevo lead" };
+    return null;
+  }
+
+  function updateFab(){
+    const t = fabTarget();
+    fabNew.classList.toggle("fab-on", !!t);
+    if(t){ fabNew.title = t.label; fabNew.setAttribute("aria-label", t.label); }
+    placeFab();
+  }
+
+  // env(safe-area-inset-*) no se puede leer directo desde JS: un elemento
+  // invisible lo toma como padding y se lee su estilo computado.
+  const fabSafeProbe = document.createElement("div");
+  fabSafeProbe.style.cssText = "position:fixed;visibility:hidden;pointer-events:none;width:0;height:0;" +
+    "padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);";
+  document.body.appendChild(fabSafeProbe);
+
+  // Encierra la posición dentro del viewport respetando el margen y el
+  // safe-area (notch / barra de inicio en iOS).
+  function clampFab(x, y){
+    const sa = getComputedStyle(fabSafeProbe);
+    const w = fabNew.offsetWidth || 56, h = fabNew.offsetHeight || 56;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const minX = FAB_MARGIN + (parseFloat(sa.paddingLeft) || 0), maxX = vw - w - FAB_MARGIN - (parseFloat(sa.paddingRight) || 0);
+    const minY = FAB_MARGIN + (parseFloat(sa.paddingTop) || 0), maxY = vh - h - FAB_MARGIN - (parseFloat(sa.paddingBottom) || 0);
+    return {
+      x: Math.min(Math.max(x, minX), Math.max(minX, maxX)),
+      y: Math.min(Math.max(y, minY), Math.max(minY, maxY)),
+    };
+  }
+
+  function placeFab(){
+    if(!fabNew.classList.contains("fab-on")) return;
+    // Por defecto: abajo a la derecha, como un FAB clásico.
+    const start = fabPos || { x: window.innerWidth, y: window.innerHeight - 24 };
+    const p = clampFab(start.x, start.y);
+    fabNew.style.transform = "";
+    fabNew.style.left = p.x + "px";
+    fabNew.style.top = p.y + "px";
+  }
+
+  // Arrastre con pointer events: si el dedo se mueve menos de unos pocos px
+  // se considera un toque y abre el modal; si no, solo reposiciona.
+  let fabDrag = null;
+  fabNew.addEventListener("pointerdown", (e) => {
+    const r = fabNew.getBoundingClientRect();
+    fabDrag = { id: e.pointerId, sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, moved: false };
+    fabNew.setPointerCapture(e.pointerId);
+  });
+  fabNew.addEventListener("pointermove", (e) => {
+    if(!fabDrag || e.pointerId !== fabDrag.id) return;
+    if(!fabDrag.moved && Math.hypot(e.clientX - fabDrag.sx, e.clientY - fabDrag.sy) < 6) return;
+    fabDrag.moved = true;
+    fabNew.classList.add("dragging");
+    const p = clampFab(e.clientX - fabDrag.ox, e.clientY - fabDrag.oy);
+    fabNew.style.left = p.x + "px";
+    fabNew.style.top = p.y + "px";
+  });
+  function endFabDrag(e, cancelled){
+    if(!fabDrag || e.pointerId !== fabDrag.id) return;
+    const moved = fabDrag.moved;
+    fabDrag = null;
+    fabNew.classList.remove("dragging");
+    if(moved){
+      fabPos = { x: parseFloat(fabNew.style.left), y: parseFloat(fabNew.style.top) };
+      try{ localStorage.setItem(FAB_POS_KEY, JSON.stringify(fabPos)); }catch(err){}
+    } else if(!cancelled){
+      const t = fabTarget();
+      if(t) t.btn.click();
+    }
+  }
+  fabNew.addEventListener("pointerup", (e) => endFabDrag(e, false));
+  fabNew.addEventListener("pointercancel", (e) => endFabDrag(e, true));
+  // El click lo dispara pointerup (para distinguirlo del arrastre); se evita
+  // el click nativo pero se mantiene la activación por teclado.
+  fabNew.addEventListener("click", (e) => {
+    if(e.detail === 0){ const t = fabTarget(); if(t) t.btn.click(); }
+  });
+  window.addEventListener("resize", placeFab);
+  window.addEventListener("orientationchange", placeFab);
 
   privadaToggleBtn.addEventListener("click", () => {
     state.privateMode = !state.privateMode;
