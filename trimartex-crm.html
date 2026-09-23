@@ -307,6 +307,16 @@
   .estado-pill{ flex:0 0 auto; font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:999px; white-space:nowrap; }
   .estado-activo{ background: var(--positive-soft); color:#5fe083; }
   .estado-inactivo{ background: rgba(150,150,160,0.14); color:#a9a9b0; }
+  /* Etiqueta "Reactivación JP · <etapa>": el color lo da la columna del
+     pipeline donde está el lead (--etapa-color, inline en la tarjeta). */
+  .reactivacion-tag{
+    display:inline-flex; align-items:center; gap:5px; max-width:100%;
+    margin-top:5px; font-size:10.5px; font-weight:700; letter-spacing:.01em;
+    padding: 3px 8px; border-radius:999px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    color: var(--etapa-color);
+    background: color-mix(in srgb, var(--etapa-color) 16%, transparent);
+  }
+  .reactivacion-tag::before{ content:""; flex:0 0 auto; width:6px; height:6px; border-radius:50%; background: var(--etapa-color); }
   .cliente-empty{ text-align:center; color:var(--text-faint); font-size:13px; padding:40px 10px; }
 
   /* Clasificación ABC: pastilla circular clickeable, un click cicla
@@ -1500,6 +1510,11 @@
       </div>
 
       <div class="field">
+        <label>Fecha última compra</label>
+        <input type="date" id="cin_ultima_compra">
+      </div>
+
+      <div class="field">
         <label>Notas</label>
         <textarea id="cin_notas" placeholder="Observaciones..."></textarea>
       </div>
@@ -1946,6 +1961,7 @@
     { key:"todos",    label:"Todos" },
     { key:"activo",   label:"Activos" },
     { key:"inactivo", label:"Inactivos" },
+    { key:"en_lead",  label:"En lead" },
   ];
 
   const PRIORIDAD_LABELS = { alta:"Alta", media:"Media", baja:"Baja" };
@@ -1989,7 +2005,7 @@
       modDesde: "", modHasta: "",         // yyyy-mm-dd, comparado contra updated_at
       abc: "todos",                       // "todos" | "A" | "B" | "C" | "sin" — barra ABC arriba del tablero
     },
-    carteraFilter: "todos", // "todos" | "activo" | "inactivo"
+    carteraFilter: "todos", // "todos" | "activo" | "inactivo" | "en_lead"
     columnWidths: loadColumnWidths(), // columnKey -> ancho en px (pipeline/recontacto)
     activeMobileColumn: null,
     editingId: null,
@@ -2221,19 +2237,42 @@
            (c.rubro||"").toLowerCase().includes(q);
   }
 
+  // "Reactivación JP": clientes de Cartera que hoy están como lead. Se deriva
+  // de origen_cliente_id de los leads (y de la Gestión Privada, que solo
+  // carga Tristán), así la etiqueta muestra siempre la etapa en vivo sin
+  // guardar nada extra en `clientes`. Un lead cuenta mientras esté abierto:
+  // ni archivado ni en Entregado/Baja — ahí el trigger
+  // reactivacion_actualizar_cliente ya lo pasó a Activo/Inactivo.
+  const ETAPAS_FIN_REACTIVACION = ["entregado", "baja"];
+  function leadsReactivacionPorCliente(){
+    const map = {};
+    [...state.leads, ...state.privados].forEach(l => {
+      if(!l.origen_cliente_id || l.archived || ETAPAS_FIN_REACTIVACION.includes(l.etapa)) return;
+      const prev = map[l.origen_cliente_id];
+      if(!prev || (l.updated_at || "") > (prev.updated_at || "")) map[l.origen_cliente_id] = l;
+    });
+    return map;
+  }
+
+  // "En lead" es un sector propio: un cliente con lead abierto sale de
+  // Activos/Inactivos y solo aparece ahí (y en Todos).
+  function sectorCartera(c, enLead){
+    return enLead[c.id] ? "en_lead" : c.estado;
+  }
+
   function clientesFiltered(){
+    const enLead = leadsReactivacionPorCliente();
     return state.clientes.filter(c =>
-      (state.carteraFilter === "todos" || c.estado === state.carteraFilter) &&
+      (state.carteraFilter === "todos" || sectorCartera(c, enLead) === state.carteraFilter) &&
       matchesSearchCliente(c, state.search) && matchesFiltersCliente(c)
     );
   }
 
   function carteraCounts(){
-    return {
-      todos: state.clientes.length,
-      activo: state.clientes.filter(c => c.estado === "activo").length,
-      inactivo: state.clientes.filter(c => c.estado === "inactivo").length,
-    };
+    const enLead = leadsReactivacionPorCliente();
+    const counts = { todos: state.clientes.length, activo: 0, inactivo: 0, en_lead: 0 };
+    state.clientes.forEach(c => { counts[sectorCartera(c, enLead)]++; });
+    return counts;
   }
 
   function tareasFiltered(){
@@ -2389,11 +2428,19 @@
     });
   }
 
-  function clienteCardHtml(c){
+  function reactivacionTagHtml(lead){
+    if(!lead) return "";
+    const col = COLUMNS.find(x => x.key === lead.etapa) || { label: lead.etapa, color: "#8e8e93" };
+    const etapa = col.label + (state.privados.includes(lead) ? " (privado)" : "");
+    return `<div><span class="reactivacion-tag" style="--etapa-color:${col.color}" title="Está como lead en ${escapeHtml(etapa)}">Reactivación JP · ${escapeHtml(etapa)}</span></div>`;
+  }
+
+  function clienteCardHtml(c, reactivacion){
     const wa = toWhatsappLink(c.telefono);
     const sub = [c.contacto, c.rubro].filter(Boolean).join(" · ");
     const ultimoPedido = state.pedidosUltimo[c.id];
     const meta = [
+      c.fecha_ultima_compra ? `Última compra: ${formatDate(c.fecha_ultima_compra)}` : "",
       c.ultimo_contacto_at ? `Último contacto: ${formatDate(c.ultimo_contacto_at)}` : "",
       ultimoPedido ? `Último pedido: ${ultimoPedido.descripcion}` : "",
     ].filter(Boolean).join(" · ");
@@ -2403,6 +2450,7 @@
         <div class="cliente-company">${escapeHtml(c.empresa)}</div>
         ${sub ? `<div class="cliente-sub">${escapeHtml(sub)}</div>` : ""}
         ${meta ? `<div class="cliente-meta">${escapeHtml(meta)}</div>` : ""}
+        ${reactivacionTagHtml(reactivacion && reactivacion[c.id])}
       </div>
       ${c.rubro ? `<span class="cliente-rubro-tag">${escapeHtml(c.rubro)}</span>` : ""}
       <span class="estado-pill estado-${c.estado}">${c.estado === "activo" ? "Activo" : "Inactivo"}</span>
@@ -2415,11 +2463,12 @@
 
   function renderCarteraBoard(){
     const clientes = clientesFiltered();
+    const reactivacion = leadsReactivacionPorCliente();
     const emptyMsg = `Sin clientes acá${state.search ? " para esta búsqueda" : ""}.`;
     boardEl.innerHTML = `
       <div class="cartera-list-wrap">
         <div class="cartera-list">
-          ${clientes.length ? clientes.map(clienteCardHtml).join("") : `<div class="cliente-empty">${emptyMsg}</div>`}
+          ${clientes.length ? clientes.map(c => clienteCardHtml(c, reactivacion)).join("") : `<div class="cliente-empty">${emptyMsg}</div>`}
         </div>
       </div>`;
     boardEl.querySelectorAll(".cliente-card").forEach(card => {
@@ -5537,6 +5586,7 @@
     telefono: document.getElementById("cin_telefono"),
     rubro: document.getElementById("cin_rubro"),
     ultimoContacto: document.getElementById("cin_ultimo_contacto"),
+    ultimaCompra: document.getElementById("cin_ultima_compra"),
     notas: document.getElementById("cin_notas"),
   };
 
@@ -5572,13 +5622,13 @@
   }
 
   // Wizard "Enviar como lead": 1) destino (solo si hay más de uno — hoy solo
-  // Tristán, que tiene Gestión Privada), 2) qué pasa con el cliente en
-  // Cartera, 3) confirmación. Cada elección avanza sola; "Atrás" permite
-  // corregir antes de confirmar.
+  // Tristán, que tiene Gestión Privada), 2) confirmación. El cliente siempre
+  // se queda en Cartera, con la etiqueta "Reactivación JP" mientras el lead
+  // esté abierto (reemplaza a la vieja opción "Eliminar de cartera").
   let enviarWizardState = null;
 
   function enviarWizardPasos(){
-    return enviarPipelineDestinos().length > 1 ? ["destino", "cartera", "confirmar"] : ["cartera", "confirmar"];
+    return enviarPipelineDestinos().length > 1 ? ["destino", "confirmar"] : ["confirmar"];
   }
 
   function resetEnviarWizard(){
@@ -5589,7 +5639,7 @@
   }
 
   function openEnviarWizard(){
-    enviarWizardState = { paso: enviarWizardPasos()[0], destino: "leads", quitar: null, etapa: null };
+    enviarWizardState = { paso: enviarWizardPasos()[0], destino: "leads", etapa: null };
     enviarPipelineBtn.style.display = "none";
     renderEnviarWizard();
     setCollapsible(enviarWizardEl, true, true);
@@ -5599,6 +5649,16 @@
     enviarWizardState = null;
     enviarPipelineBtn.style.display = "";
     setCollapsible(enviarWizardEl, false, true);
+  }
+
+  // Un inactivo solo tiene sentido en Leads Tristán si ya trae la fecha de
+  // última compra y una nota — a Tristán le sirve llegar con esa info.
+  function faltanDatosLeadsTristan(c, etapa){
+    if(etapa !== "leads_tristan" || c.estado !== "inactivo") return [];
+    return [
+      c.fecha_ultima_compra ? "" : "la fecha de última compra",
+      (c.notas || "").trim() ? "" : "una nota",
+    ].filter(Boolean);
   }
 
   function wizardChoiceHtml(name, value, title, sub, selected, extraCls){
@@ -5620,31 +5680,28 @@
           ${wizardChoiceHtml("destino", "leads", "Pipeline compartido", "Lo ven Joaquín y Tristán.", s.destino === "leads")}
           ${wizardChoiceHtml("destino", "leads_privados_tristan", "Gestión Privada", "Tu CRM privado: solo lo ves vos.", s.destino === "leads_privados_tristan")}
         </div>`;
-    } else if(s.paso === "cartera"){
-      html = `<p class="wizard-q">¿Y el cliente en Cartera?</p>
-        <div class="choice-list">
-          ${wizardChoiceHtml("quitar", "no", "Mantener en cartera", "Sigue en Cartera y además queda como lead.", s.quitar === false)}
-          ${wizardChoiceHtml("quitar", "si", "Eliminar de cartera", "Sale de Cartera y queda solo como lead.", s.quitar === true, "danger")}
-        </div>`;
     } else {
       const etapas = enviarPipelineEtapas(s.destino);
       if(!etapas.some(e => e.key === s.etapa)){
         s.etapa = (etapas.find(e => e.key === "nuevo") || etapas.find(e => e.key === "leads_tristan") || etapas[0]).key;
       }
       const destinoLabel = enviarPipelineDestinos().find(d => d.value === s.destino).label;
+      const faltan = faltanDatosLeadsTristan(c, s.etapa);
       html = `<p class="wizard-q">Confirmá el envío</p>
         <div class="wizard-summary">
           <b>${escapeHtml(c.empresa)}</b> se crea como lead en <b>${escapeHtml(destinoLabel)}</b>.<br>
-          En Cartera: ${s.quitar ? `<b class="wizard-danger">se elimina</b>` : `<b>se mantiene</b>`}.
+          En Cartera <b>se mantiene</b>, con la etiqueta <b>Reactivación JP</b> y la etapa del lead.
         </div>
         <div class="field" style="margin-bottom:0;">
           <label for="in_enviar_etapa">Etapa inicial</label>
           <select id="in_enviar_etapa">${etapas.map(e => `<option value="${e.key}"${e.key === s.etapa ? " selected" : ""}>${escapeHtml(e.label)}</option>`).join("")}</select>
-        </div>`;
+        </div>
+        ${faltan.length ? `<div class="wizard-summary" style="margin-top:10px;"><b class="wizard-danger">Para pasarlo a Leads Tristán falta: ${escapeHtml(faltan.join(" y "))}.</b><br>Cargalo en el cliente y volvé a enviarlo.</div>` : ""}`;
     }
 
+    const bloqueado = s.paso === "confirmar" && faltanDatosLeadsTristan(c, s.etapa).length > 0;
     const confirmBtn = s.paso === "confirmar"
-      ? `<button type="button" class="btn ${s.quitar ? "btn-danger-solid" : "btn-accent"}" data-wiz="confirmar">${s.quitar ? "Enviar y eliminar de cartera" : "Enviar como lead"}</button>`
+      ? `<button type="button" class="btn btn-accent" data-wiz="confirmar"${bloqueado ? " disabled" : ""}>Enviar como lead</button>`
       : "";
     enviarWizardBody.innerHTML = html + `<div class="wizard-actions"><button type="button" class="btn btn-ghost" data-wiz="atras">${idx === 0 ? "Cancelar" : "Atrás"}</button>${confirmBtn}</div>`;
   }
@@ -5658,7 +5715,6 @@
     const choice = e.target.closest("[data-choice]");
     if(choice){
       if(choice.dataset.choice === "destino") s.destino = choice.dataset.value;
-      else s.quitar = choice.dataset.value === "si";
       s.paso = pasos[idx + 1];
       renderEnviarWizard();
       return;
@@ -5680,7 +5736,10 @@
   });
 
   enviarWizardBody.addEventListener("change", (e) => {
-    if(e.target.id === "in_enviar_etapa" && enviarWizardState) enviarWizardState.etapa = e.target.value;
+    if(e.target.id === "in_enviar_etapa" && enviarWizardState){
+      enviarWizardState.etapa = e.target.value;
+      renderEnviarWizard();
+    }
   });
 
   // El rubro de Cartera es texto libre (ver renderRubrosClienteDatalist); el
@@ -5703,7 +5762,7 @@
     return "otro";
   }
 
-  async function enviarClienteAPipeline(c, { destino, etapa: etapaDestino, quitar }){
+  async function enviarClienteAPipeline(c, { destino, etapa: etapaDestino }){
     const rubroMapeado = mapRubroACliente(c.rubro);
     const rubroSinMatch = c.rubro && rubroMapeado === "otro" && normalizeRubroKey(c.rubro) !== "otro";
     const notas = [
@@ -5725,7 +5784,8 @@
       clasificacion_abc: c.clasificacion_abc || null,
       contacto2_nombre: c.contacto2_nombre || null,
       contacto2_telefono: c.contacto2_telefono || null,
-      ...(destino === "leads" ? { origen: "cartera", origen_cliente_id: c.id } : {}),
+      origen_cliente_id: c.id,
+      ...(destino === "leads" ? { origen: "cartera" } : {}),
       created_by: state.session.user.id,
     };
 
@@ -5735,25 +5795,8 @@
     const destinoLabel = enviarPipelineDestinos().find(d => d.value === destino).label;
     const etapaLabel = (COLUMNS.find(col => col.key === etapaDestino) || {}).label || etapaDestino;
 
-    if(!quitar){
-      closeEnviarWizard();
-      toast(`${c.empresa} enviado a ${destinoLabel} (${etapaLabel})`);
-      return;
-    }
-
-    // Se saca de Cartera recién con el lead ya creado: si esto falla, el
-    // cliente sigue en Cartera y no se pierde nada.
-    const { error: quitarError } = await supa.from("clientes").update({ trashed_at: new Date().toISOString() }).eq("id", c.id);
-    if(quitarError){
-      console.error(quitarError);
-      closeEnviarWizard();
-      toast(`Lead creado, pero ${c.empresa} no se pudo quitar de Cartera`);
-      return;
-    }
-    state.clientes = state.clientes.filter(x => x.id !== c.id);
-    closeClienteModal();
-    render();
-    toast(`${c.empresa} enviado a ${destinoLabel} (${etapaLabel}) y quitado de Cartera`);
+    closeEnviarWizard();
+    toast(`${c.empresa} enviado a ${destinoLabel} (${etapaLabel}) — queda en Cartera como Reactivación JP`);
   }
 
   enviarPipelineBtn.addEventListener("click", openEnviarWizard);
@@ -5830,6 +5873,7 @@
     clienteContacto2.load(c && c.contacto2_nombre, c && c.contacto2_telefono);
     cFields.rubro.value = c ? (c.rubro || "") : "";
     cFields.ultimoContacto.value = c ? (c.ultimo_contacto_at || "") : "";
+    cFields.ultimaCompra.value = c ? (c.fecha_ultima_compra || "") : "";
     cFields.notas.value = c ? c.notas : "";
     cfEmpresa.classList.remove("invalid");
     clienteEstadoValue = c ? c.estado : "activo";
@@ -5886,6 +5930,7 @@
       rubro: cFields.rubro.value.trim() || null,
       estado: clienteEstadoValue,
       ultimo_contacto_at: cFields.ultimoContacto.value || null,
+      fecha_ultima_compra: cFields.ultimaCompra.value || null,
       notas: cFields.notas.value.trim(),
       ...clienteContacto2.values(),
     };
@@ -5899,9 +5944,11 @@
     } else {
       const c = state.clientes.find(x => x.id === state.editingClienteId);
       if(!c) return;
-      Object.assign(c, payload);
-      const { error } = await supa.from("clientes").update(payload).eq("id", c.id);
+      // select(): el trigger clientes_reclasificar_por_compra puede cambiar
+      // el estado al cargar la fecha de última compra — se toma la fila real.
+      const { data, error } = await supa.from("clientes").update(payload).eq("id", c.id).select().single();
       if(error){ console.error(error); toast("No se pudo guardar el cambio"); return; }
+      Object.assign(c, data);
       toast("Cambios guardados");
     }
     closeClienteModal();
