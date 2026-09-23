@@ -2187,7 +2187,30 @@
     });
   }
 
+  // Cada render reemplaza el HTML del tablero, y con eso las columnas volvían
+  // arriba de todo (p. ej. al volver de WhatsApp, cuando Supabase revalida la
+  // sesión y se recarga todo, o al llegar un cambio por realtime). Guardamos
+  // el scroll antes y lo reponemos después, salvo que se haya cambiado de página.
+  function snapshotBoardScroll(){
+    const snap = { page: state.page, left: boardEl.scrollLeft, top: boardEl.scrollTop, inner: {} };
+    boardEl.querySelectorAll(".column-body, .cartera-list-wrap").forEach(el => {
+      snap.inner[el.dataset.column || el.className] = el.scrollTop;
+    });
+    return snap;
+  }
+
+  function restoreBoardScroll(snap){
+    if(!snap || snap.page !== state.page) return;
+    boardEl.scrollLeft = snap.left;
+    boardEl.scrollTop = snap.top;
+    boardEl.querySelectorAll(".column-body, .cartera-list-wrap").forEach(el => {
+      const top = snap.inner[el.dataset.column || el.className];
+      if(top) el.scrollTop = top;
+    });
+  }
+
   function render(){
+    const scrollSnap = snapshotBoardScroll();
     renderPageToggle();
     applyModeUI();
     if(state.page === "reportes"){
@@ -2231,6 +2254,7 @@
       renderBoard();
     }
     renderAbcFilterBar();
+    restoreBoardScroll(scrollSnap);
     lastPage = state.page;
   }
 
@@ -6153,7 +6177,12 @@
     if(state.mode === "tristan"){ loads.push(loadPrivados()); loads.push(loadEmailCompartido()); }
     await Promise.all(loads);
     subscribeRealtime();
-    state.activeMobileColumn = currentColumns()[0].key;
+    // Al revalidar la sesión (volver a la pestaña) se mantiene la columna en
+    // la que estabas en el celular; solo la primera vez arrancamos en la primera.
+    const colsActuales = currentColumns();
+    if(!colsActuales.some(c => c.key === state.activeMobileColumn)){
+      state.activeMobileColumn = colsActuales[0].key;
+    }
     render();
     // handleSession() se vuelve a disparar cada vez que Supabase revalida la
     // sesión (volver a la pestaña, refresh de token) — sin esta guarda, los
