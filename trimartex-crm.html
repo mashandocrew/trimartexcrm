@@ -3079,8 +3079,17 @@
         const target = cancelado ? null : findDropTargetAt(lastX, lastY);
         let nuevoOrden = null;
         if(target && target.classList.contains("column-body")){
-          const antes = cardAnteLaQueInsertar(target, lastY, cardEl.dataset.id);
-          nuevoOrden = calcularOrden(target, antes, cardEl.dataset.id);
+          // Reordenar con el mouse/dedo sólo tiene sentido dentro de la
+          // misma columna: al cambiar de etapa el lead siempre va al final
+          // (lo calcula moveCard), sin importar dónde se soltó.
+          const draggedLead = activeLeads().find(l => l.id === cardEl.dataset.id);
+          const mismaColumna = draggedLead && (state.page === "recontacto"
+            ? ("r" + draggedLead.recontacto_stage) === target.dataset.column
+            : draggedLead.etapa === target.dataset.column);
+          if(mismaColumna){
+            const antes = cardAnteLaQueInsertar(target, lastY, cardEl.dataset.id);
+            nuevoOrden = calcularOrden(target, antes, cardEl.dataset.id);
+          }
         }
         highlightTarget(null);
         marcarInsercion(null);
@@ -3111,11 +3120,23 @@
     }
 
     const patch = {};
+    let cambioEtapa = false;
     if(state.page === "recontacto"){
       const stage = Number(targetKey.slice(1));
-      if(lead.recontacto_stage !== stage) patch.recontacto_stage = stage;
+      if(lead.recontacto_stage !== stage){ patch.recontacto_stage = stage; cambioEtapa = true; }
     } else {
-      if(lead.etapa !== targetKey) patch.etapa = targetKey;
+      if(lead.etapa !== targetKey){ patch.etapa = targetKey; cambioEtapa = true; }
+    }
+    // Al cambiar de etapa el lead siempre cae al final de la columna
+    // destino, sin importar dónde se soltó ni qué se estaba viendo.
+    if(cambioEtapa && nuevoOrden == null){
+      const enDestino = (l) => state.page === "recontacto"
+        ? l.recontacto_stage === Number(targetKey.slice(1))
+        : l.etapa === targetKey;
+      const ordenes = activeLeads()
+        .filter(l => l.id !== id && enDestino(l))
+        .map(l => Number(l.orden) || 0);
+      nuevoOrden = ordenes.length ? Math.max(...ordenes) + ORDEN_STEP : ORDEN_STEP;
     }
     // Reordenar dentro de la misma columna es un cambio válido por sí solo.
     if(nuevoOrden != null && Number(nuevoOrden) !== Number(lead.orden)) patch.orden = nuevoOrden;
@@ -3123,7 +3144,7 @@
 
     const previo = { etapa: lead.etapa, recontacto_stage: lead.recontacto_stage, orden: lead.orden };
     Object.assign(lead, patch);
-    state.activeMobileColumn = targetKey;
+    // La vista se queda donde estaba: ya no saltamos a la columna destino.
     render();
     const justMoved = boardEl.querySelector(`.lead-card[data-id="${id}"]`);
     if(justMoved) justMoved.classList.add("drop-in");
