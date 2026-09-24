@@ -2964,6 +2964,12 @@
   let finUltimoDrag = 0;
   const LONG_PRESS_MS = 400;
   const AUTOSCROLL_ZONA = 70;
+  // Al soltar en "Contactado" viniendo de otra etapa, por defecto el lead
+  // cae al final de la columna (ver moveCard). Sólo si el arrastre se
+  // mantuvo sobre esa columna más de este tiempo se respeta el lugar exacto
+  // donde se soltó, para poder elegir la posición a propósito sin que una
+  // soltada rápida lo deje en cualquier lado.
+  const CONTACTADO_HOLD_MS = 1000;
 
   // Evita que el navegador scrollee mientras hay un arrastre en curso (en
   // táctil, la tarjeta permite pan-y para poder scrollear normalmente).
@@ -2985,6 +2991,9 @@
       const pointerId = e.pointerId;
       let startX = e.clientX, startY = e.clientY, lastX = startX, lastY = startY;
       let dragging = false, armado = !tactil || enAsa, ghost = null, rafId = null, pressTimer = null;
+      // Cuánto tiempo lleva el arrastre sobrevolando el mismo column-body
+      // de "Contactado" sin soltar, para la excepción de CONTACTADO_HOLD_MS.
+      let contactadoHoverBody = null, contactadoHoverDesde = 0;
 
       if(tactil && !enAsa){
         pressTimer = setTimeout(() => {
@@ -3015,13 +3024,40 @@
         rafId = requestAnimationFrame(autoScroll);
       }
 
+      // ¿El lead arrastrado ya pertenece a la columna destino? (reordenar
+      // dentro de la misma etapa siempre respeta la posición exacta).
+      function mismaColumnaDe(target){
+        if(!target || !target.classList.contains("column-body")) return false;
+        const draggedLead = activeLeads().find(l => l.id === cardEl.dataset.id);
+        if(!draggedLead) return false;
+        return state.page === "recontacto"
+          ? ("r" + draggedLead.recontacto_stage) === target.dataset.column
+          : draggedLead.etapa === target.dataset.column;
+      }
+
+      // Excepción para entrar a "Contactado" desde otra etapa: si el
+      // arrastre lleva más de CONTACTADO_HOLD_MS sobre esa columna, se
+      // puede elegir el lugar exacto en vez de ir siempre al final.
+      function puedeElegirLugarEnContactado(target){
+        return !!target && target.classList.contains("column-body")
+          && target.dataset.column === "contactado"
+          && contactadoHoverBody === target
+          && (performance.now() - contactadoHoverDesde) >= CONTACTADO_HOLD_MS;
+      }
+
       function actualizar(){
         ghost.style.left = (lastX - Number(ghost.dataset.offX)) + "px";
         ghost.style.top = (lastY - Number(ghost.dataset.offY)) + "px";
         const target = findDropTargetAt(lastX, lastY);
         highlightTarget(target);
         const esBody = target && target.classList.contains("column-body");
-        marcarInsercion(esBody ? target : null, esBody ? cardAnteLaQueInsertar(target, lastY, cardEl.dataset.id) : null);
+        if(esBody && target.dataset.column === "contactado"){
+          if(contactadoHoverBody !== target){ contactadoHoverBody = target; contactadoHoverDesde = performance.now(); }
+        } else {
+          contactadoHoverBody = null;
+        }
+        const eligeLugar = esBody && (mismaColumnaDe(target) || puedeElegirLugarEnContactado(target));
+        marcarInsercion(esBody ? target : null, eligeLugar ? cardAnteLaQueInsertar(target, lastY, cardEl.dataset.id) : null);
       }
 
       // Desplazamiento automático cerca de los bordes mientras se arrastra.
@@ -3079,14 +3115,11 @@
         const target = cancelado ? null : findDropTargetAt(lastX, lastY);
         let nuevoOrden = null;
         if(target && target.classList.contains("column-body")){
-          // Reordenar con el mouse/dedo sólo tiene sentido dentro de la
-          // misma columna: al cambiar de etapa el lead siempre va al final
-          // (lo calcula moveCard), sin importar dónde se soltó.
-          const draggedLead = activeLeads().find(l => l.id === cardEl.dataset.id);
-          const mismaColumna = draggedLead && (state.page === "recontacto"
-            ? ("r" + draggedLead.recontacto_stage) === target.dataset.column
-            : draggedLead.etapa === target.dataset.column);
-          if(mismaColumna){
+          // Reordenar por posición sólo aplica dentro de la misma columna,
+          // o al entrar a "Contactado" si se sostuvo el arrastre ahí más de
+          // CONTACTADO_HOLD_MS. En cualquier otro cambio de etapa el lead
+          // va siempre al final (lo calcula moveCard).
+          if(mismaColumnaDe(target) || puedeElegirLugarEnContactado(target)){
             const antes = cardAnteLaQueInsertar(target, lastY, cardEl.dataset.id);
             nuevoOrden = calcularOrden(target, antes, cardEl.dataset.id);
           }
