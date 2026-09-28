@@ -1391,6 +1391,11 @@
         <textarea id="in_notas" placeholder="Observaciones, próximos pasos..."></textarea>
       </div>
 
+      <div class="field" id="f_pedido_presupuestar" style="display:none;">
+        <label>Pedido a presupuestar</label>
+        <textarea id="in_pedido_presupuestar" placeholder="Productos, cantidades, medidas, colores..."></textarea>
+      </div>
+
       <div class="field" id="f_cierre" style="display:none;">
         <label id="cierreLabel">Estado de cierre</label>
         <div class="cierre-seg" id="cierreSeg"></div>
@@ -1558,6 +1563,31 @@
       </div>
     </div>
     <div class="modal-foot" id="clienteModalFoot"></div>
+  </div>
+</div>
+
+<!-- Pedido a presupuestar (se abre al pasar un lead a Cotización pendiente) -->
+<div class="overlay" id="pedidoCotiOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="pedidoCotiTitle">Pedido a presupuestar</h2>
+      <button class="modal-close" id="pedidoCotiCloseBtn"><svg viewBox="0 0 24 24" fill="none"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label for="in_pedido_coti">¿Qué hay que presupuestar?</label>
+        <textarea id="in_pedido_coti" rows="6" placeholder="Ej: 500 servilletas 33x33 blancas con logo&#10;200 manteles 1,50x1,50 negros"></textarea>
+      </div>
+      <div class="field">
+        <label for="in_pedido_coti_ticket">Ticket estimado (opcional)</label>
+        <input type="number" id="in_pedido_coti_ticket" min="0" step="1000" placeholder="0">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="pedidoCotiSkipBtn">Omitir</button>
+      <span style="flex:1 1 auto"></span>
+      <button class="btn btn-accent" id="pedidoCotiSaveBtn">Guardar pedido</button>
+    </div>
   </div>
 </div>
 
@@ -2878,6 +2908,7 @@
         ${isRecontacto ? `<span class="rc-stage-badge">Semana ${lead.recontacto_stage}/8</span>${isVencido(lead) ? '<span class="rc-vencido-badge">Vencido</span>' : ""}` : ""}
       </div>
       ${isRecontacto && lead.notas ? `<div class="card-notes-preview">${escapeHtml(lead.notas)}</div>` : ""}
+      ${!isRecontacto && lead.etapa === "cotizacion_pendiente" && lead.pedido_presupuestar ? `<div class="card-notes-preview" title="Pedido a presupuestar">${escapeHtml(lead.pedido_presupuestar)}</div>` : ""}
       <div class="card-bottom">
         <span class="card-meta">${lead.fuente ? escapeHtml(lead.fuente) : "&nbsp;"}${lead.fecha_contacto ? " · " + formatDate(lead.fecha_contacto) : ""}</span>
         ${readOnly ? "" : `<span class="drag-handle" title="Mantener y arrastrar para mover" aria-hidden="true">
@@ -3188,8 +3219,52 @@
       Object.assign(lead, previo);
       render();
       toast("No se pudo guardar el cambio");
+      return;
     }
+    // Al entrar a Cotización pendiente se pide cargar qué hay que presupuestar.
+    if(patch.etapa === "cotizacion_pendiente") openPedidoCotiModal(lead);
   }
+
+  /* ============ Pedido a presupuestar (al pasar a Cotización pendiente) ============ */
+  const pedidoCotiOverlay = document.getElementById("pedidoCotiOverlay");
+  const inPedidoCoti = document.getElementById("in_pedido_coti");
+  const inPedidoCotiTicket = document.getElementById("in_pedido_coti_ticket");
+  let pedidoCotiLeadId = null;
+
+  function openPedidoCotiModal(lead){
+    pedidoCotiLeadId = lead.id;
+    document.getElementById("pedidoCotiTitle").textContent = `Pedido a presupuestar — ${lead.empresa}`;
+    inPedidoCoti.value = lead.pedido_presupuestar || "";
+    inPedidoCotiTicket.value = lead.ticket ? lead.ticket : "";
+    pedidoCotiOverlay.classList.add("open");
+    setTimeout(() => inPedidoCoti.focus(), 60);
+  }
+
+  function closePedidoCotiModal(){
+    pedidoCotiOverlay.classList.remove("open");
+    pedidoCotiLeadId = null;
+  }
+
+  document.getElementById("pedidoCotiCloseBtn").addEventListener("click", closePedidoCotiModal);
+  document.getElementById("pedidoCotiSkipBtn").addEventListener("click", closePedidoCotiModal);
+  document.getElementById("pedidoCotiSaveBtn").addEventListener("click", async () => {
+    const lead = activeLeads().find(l => l.id === pedidoCotiLeadId);
+    if(!lead){ closePedidoCotiModal(); return; }
+    const pedido = inPedidoCoti.value.trim();
+    if(!pedido){ toast("Escribí qué hay que presupuestar"); inPedidoCoti.focus(); return; }
+    const patch = { pedido_presupuestar: pedido };
+    const ticket = Number(inPedidoCotiTicket.value) || 0;
+    if(ticket !== (Number(lead.ticket) || 0)) patch.ticket = ticket;
+    const saveBtn = document.getElementById("pedidoCotiSaveBtn");
+    saveBtn.disabled = true;
+    const { error } = await supa.from(activeTable()).update(patch).eq("id", lead.id);
+    saveBtn.disabled = false;
+    if(error){ console.error(error); toast("No se pudo guardar el pedido"); return; }
+    Object.assign(lead, patch);
+    closePedidoCotiModal();
+    render();
+    toast("Pedido a presupuestar guardado");
+  });
 
   /* ============ Search ============ */
   const searchInput = document.getElementById("searchInput");
@@ -3476,7 +3551,9 @@
     fecha: document.getElementById("in_fecha"),
     resultado: document.getElementById("in_resultado"),
     notas: document.getElementById("in_notas"),
+    pedido: document.getElementById("in_pedido_presupuestar"),
   };
+  const pedidoPresupuestarField = document.getElementById("f_pedido_presupuestar");
   // Selector ABC del modal (botones, no <select>): valor en data-value.
   const abcSeg = document.getElementById("in_abc");
   function setAbcSeg(v){
@@ -3653,6 +3730,11 @@
     fields.resultado.value = lead ? lead.resultado : "sin_respuesta";
     setAbcSeg(lead ? lead.clasificacion_abc : "");
     fields.notas.value = lead ? lead.notas : "";
+    // El pedido a presupuestar se muestra desde Cotización pendiente en
+    // adelante, o en cualquier etapa si ya tiene algo cargado.
+    fields.pedido.value = lead ? (lead.pedido_presupuestar || "") : "";
+    pedidoPresupuestarField.style.display =
+      (etapaParaLabel === "cotizacion_pendiente" || fields.pedido.value) ? "block" : "none";
     fieldWraps.empresa.classList.remove("invalid");
 
     // Todos los campos se bloquean o se liberan juntos. Ni la clasificación
@@ -4086,6 +4168,7 @@
         ...leadContacto2.values(),
         created_by: state.session.user.id,
       };
+      if(fields.pedido.value.trim()) payload.pedido_presupuestar = fields.pedido.value.trim();
       const { data, error } = await supa.from(activeTable()).insert(payload).select().single();
       if(error){ console.error(error); toast("No se pudo crear el lead"); return; }
       activeLeads().push(data);
@@ -4108,6 +4191,9 @@
         notas: fields.notas.value.trim(),
         ...leadContacto2.values(),
       };
+      // Solo viaja si cambió: así el guardado normal no depende de la columna.
+      const pedido = fields.pedido.value.trim();
+      if(pedido !== (lead.pedido_presupuestar || "")) patch.pedido_presupuestar = pedido;
       Object.assign(lead, patch);
       const { error } = await supa.from(activeTable()).update(patch).eq("id", lead.id);
       if(error){ console.error(error); toast("No se pudo guardar el cambio"); return; }
