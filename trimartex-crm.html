@@ -770,6 +770,16 @@
     border-radius:8px; padding:7px 9px; margin-top:8px; line-height:1.4;
     display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
   }
+  .card-pedido{
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+    width:100%; text-align:left; font:inherit; font-size:11.5px; line-height:1.4; color:var(--text-dim);
+    background:rgba(255,159,10,0.07); border:1px solid rgba(255,159,10,0.3); border-radius:8px;
+    padding:7px 9px; margin-top:8px; cursor:pointer;
+  }
+  .card-pedido b{ color:#ffb340; font-weight:600; }
+  .card-pedido:hover{ background:rgba(255,159,10,0.12); }
+  .card-pedido.card-pedido-empty{ border-style:dashed; color:var(--text-dim); background:transparent; }
+  div.card-pedido{ cursor:default; }
   .rc-stage-badge{
     font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:999px;
     background: var(--accent-soft); color:#7ab8ff;
@@ -1392,7 +1402,7 @@
       </div>
 
       <div class="field" id="f_pedido_presupuestar" style="display:none;">
-        <label>Pedido a presupuestar</label>
+        <label>Pedido / Cotización solicitada</label>
         <textarea id="in_pedido_presupuestar" placeholder="Productos, cantidades, medidas, colores..."></textarea>
       </div>
 
@@ -1570,7 +1580,7 @@
 <div class="overlay" id="pedidoCotiOverlay">
   <div class="modal">
     <div class="modal-head">
-      <h2 id="pedidoCotiTitle">Pedido a presupuestar</h2>
+      <h2 id="pedidoCotiTitle">Pedido / Cotización solicitada</h2>
       <button class="modal-close" id="pedidoCotiCloseBtn"><svg viewBox="0 0 24 24" fill="none"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
     </div>
     <div class="modal-body">
@@ -1864,6 +1874,9 @@
   // "leads_tristan": leads que Tristán compartió desde su Gestión Privada — visibles
   // para ambos roles. Después de eso, la primera etapa propia del embudo de Joaquín
   // que ve Tristán es "Cotización pendiente".
+  // Etapas en las que se ve y se edita el "Pedido / Cotización solicitada":
+  // de Cotización pendiente en adelante.
+  const ETAPAS_CON_PEDIDO = COLUMNS.slice(COLUMNS.findIndex(c => c.key === "cotizacion_pendiente")).map(c => c.key);
   const TRISTAN_VISIBLE = ["leads_tristan","cotizacion_pendiente","cotizacion_enviada","seguimiento","pedido_confirmado","entregado","baja"];
 
   /* ============ Permisos (helper central) ============
@@ -2505,6 +2518,7 @@
       card.addEventListener("click", () => openClienteModal(card.dataset.id));
     });
     wireAbcBadges(boardEl);
+    wireCardPedidos(boardEl);
   }
 
   // Vista de solo lectura para Tristán: lista plana (no kanban, no drag) de
@@ -2805,6 +2819,7 @@
       if(card.dataset.readonly !== "1") attachDrag(card);
     });
     wireAbcBadges(boardEl);
+    wireCardPedidos(boardEl);
   }
 
   // Redimensionar columnas del pipeline/recontacto arrastrando el borde
@@ -2868,6 +2883,16 @@
     }
   }
 
+  function wireCardPedidos(root){
+    root.querySelectorAll(".card-pedido[data-pedido-id]").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const lead = activeLeads().find(l => l.id === btn.dataset.pedidoId);
+        if(lead && puedeEditarLead(lead)) openPedidoCotiModal(lead);
+      });
+    });
+  }
+
   function wireAbcBadges(root){
     root.querySelectorAll(".abc-badge[data-abc-id]").forEach(btn => {
       btn.addEventListener("click", (e) => { e.stopPropagation(); cycleAbc(btn); });
@@ -2886,6 +2911,19 @@
     for(let i = 0; i < (key || "").length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
     const hue = hash % 360;
     return { cls: "tag-dynamic", style: ` style="background:hsla(${hue},70%,55%,0.16);color:hsl(${hue},75%,72%);"` };
+  }
+
+  // Bloque "Pedido / Cotización solicitada" de la card: desde Cotización
+  // pendiente en adelante. Click abre el menú del pedido (sin abrir el lead).
+  function cardPedidoHtml(lead, readOnly){
+    if(!ETAPAS_CON_PEDIDO.includes(lead.etapa)) return "";
+    const pedido = lead.pedido_presupuestar || "";
+    if(readOnly){
+      return pedido ? `<div class="card-pedido"><b>Pedido:</b> ${escapeHtml(pedido)}</div>` : "";
+    }
+    return pedido
+      ? `<button type="button" class="card-pedido" data-pedido-id="${lead.id}" title="Ver / editar pedido"><b>Pedido:</b> ${escapeHtml(pedido)}</button>`
+      : `<button type="button" class="card-pedido card-pedido-empty" data-pedido-id="${lead.id}">+ Cargar pedido / cotización solicitada</button>`;
   }
 
   function cardHtml(lead, isRecontacto, readOnly){
@@ -2908,7 +2946,7 @@
         ${isRecontacto ? `<span class="rc-stage-badge">Semana ${lead.recontacto_stage}/8</span>${isVencido(lead) ? '<span class="rc-vencido-badge">Vencido</span>' : ""}` : ""}
       </div>
       ${isRecontacto && lead.notas ? `<div class="card-notes-preview">${escapeHtml(lead.notas)}</div>` : ""}
-      ${!isRecontacto && lead.etapa === "cotizacion_pendiente" && lead.pedido_presupuestar ? `<div class="card-notes-preview" title="Pedido a presupuestar">${escapeHtml(lead.pedido_presupuestar)}</div>` : ""}
+      ${!isRecontacto ? cardPedidoHtml(lead, readOnly) : ""}
       <div class="card-bottom">
         <span class="card-meta">${lead.fuente ? escapeHtml(lead.fuente) : "&nbsp;"}${lead.fecha_contacto ? " · " + formatDate(lead.fecha_contacto) : ""}</span>
         ${readOnly ? "" : `<span class="drag-handle" title="Mantener y arrastrar para mover" aria-hidden="true">
@@ -3233,7 +3271,7 @@
 
   function openPedidoCotiModal(lead){
     pedidoCotiLeadId = lead.id;
-    document.getElementById("pedidoCotiTitle").textContent = `Pedido a presupuestar — ${lead.empresa}`;
+    document.getElementById("pedidoCotiTitle").textContent = `Pedido / Cotización solicitada — ${lead.empresa}`;
     inPedidoCoti.value = lead.pedido_presupuestar || "";
     inPedidoCotiTicket.value = lead.ticket ? lead.ticket : "";
     pedidoCotiOverlay.classList.add("open");
@@ -3263,7 +3301,7 @@
     Object.assign(lead, patch);
     closePedidoCotiModal();
     render();
-    toast("Pedido a presupuestar guardado");
+    toast("Pedido guardado");
   });
 
   /* ============ Search ============ */
@@ -3730,11 +3768,11 @@
     fields.resultado.value = lead ? lead.resultado : "sin_respuesta";
     setAbcSeg(lead ? lead.clasificacion_abc : "");
     fields.notas.value = lead ? lead.notas : "";
-    // El pedido a presupuestar se muestra desde Cotización pendiente en
-    // adelante, o en cualquier etapa si ya tiene algo cargado.
+    // El pedido / cotización solicitada se muestra desde Cotización pendiente
+    // en adelante, o en cualquier etapa si ya tiene algo cargado.
     fields.pedido.value = lead ? (lead.pedido_presupuestar || "") : "";
     pedidoPresupuestarField.style.display =
-      (etapaParaLabel === "cotizacion_pendiente" || fields.pedido.value) ? "block" : "none";
+      (ETAPAS_CON_PEDIDO.includes(etapaParaLabel) || fields.pedido.value) ? "block" : "none";
     fieldWraps.empresa.classList.remove("invalid");
 
     // Todos los campos se bloquean o se liberan juntos. Ni la clasificación
