@@ -1253,6 +1253,10 @@
       <span>Nueva tarea</span>
     </button>
 
+    <button class="icon-btn" id="logoutOthersBtn" title="Cerrar sesión en otros dispositivos">
+      <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="12" height="9" rx="1.5" stroke="currentColor" stroke-width="1.7"/><path d="M6 18h6M18 8l3 3m0-3l-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+
     <button class="icon-btn" id="logoutBtn" title="Cerrar sesión">
       <svg viewBox="0 0 24 24" fill="none"><path d="M15 17l5-5-5-5M20 12H9M12 19H6a1 1 0 01-1-1V6a1 1 0 011-1h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
@@ -6413,6 +6417,11 @@
 
   logoutBtn.addEventListener("click", async () => {
     await supa.auth.signOut();
+  });
+
+  document.getElementById("logoutOthersBtn").addEventListener("click", async () => {
+    const { error } = await supa.auth.signOut({ scope: "others" });
+    toast(error ? "No se pudo cerrar las otras sesiones" : "Otras sesiones cerradas");
   });
 
   let realtimeChannel = null;
