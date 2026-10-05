@@ -648,7 +648,22 @@
   .modal-foot{
     padding: 14px 20px; padding-bottom: max(14px, env(safe-area-inset-bottom));
     border-top: 1px solid var(--border-soft);
-    display:flex; align-items:center; gap:10px; flex:0 0 auto;
+    display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:10px; flex:0 0 auto;
+  }
+  .modal-foot .btn{ white-space:nowrap; flex:0 0 auto; }
+  .modal-foot .btn-full{ flex:1 1 100%; }
+  .modal-foot > span[style*="flex"]{ flex:1 1 0; min-width:0; }
+  .modal{ min-width:0; overflow:hidden; }
+  @media (max-width: 520px){
+    .overlay{ padding: max(28px, env(safe-area-inset-top)) 22px max(28px, env(safe-area-inset-bottom)); }
+    .modal{ max-height: 82vh; max-height: 82dvh; max-width: 440px; }
+    .modal-head{ padding: 16px 18px 12px; }
+    .modal-body{ padding: 14px 18px; }
+    .modal-foot{ padding: 12px 18px; padding-bottom: 12px; gap:8px; }
+    /* Botones en grilla de 2 columnas: todos dentro del recuadro, sin cortarse */
+    .modal-foot > span[style*="flex"]{ display:none; }
+    .modal-foot .btn{ flex:1 1 calc(50% - 4px); min-width:0; white-space:normal; padding:11px 10px; font-size:13.5px; line-height:1.25; text-align:center; }
+    .modal-foot .btn-accent:last-child{ flex-basis:100%; }
   }
 
   .field{ margin-bottom: 14px; }
