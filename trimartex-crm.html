@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <title>Trimartex CRM</title>
 <meta name="theme-color" content="#0a0a0c">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack.min.css">
@@ -57,7 +57,7 @@
      iPhone (Safari y Chrome), al abrir/cerrar el teclado o rebotar al final
      de una lista, la página quedaba desplazada hacia arriba: el encabezado
      tapado por la barra del navegador y una franja vacía abajo. */
-  #app{ position:fixed; left:0; right:0; top:var(--vv-top, 0px); height:var(--vv-h, 100%); display:flex; flex-direction:column; }
+  #app{ position:fixed; inset:0; display:flex; flex-direction:column; }
 
   /* ---------- Header ---------- */
   header.topbar{
@@ -614,7 +614,7 @@
 
   /* ---------- Modal ---------- */
   .overlay{
-    position: fixed; left:0; right:0; top:var(--vv-top, 0px); height:var(--vv-h, 100%);
+    position: fixed; inset:0;
     background: rgba(0,0,0,0.55);
     backdrop-filter: blur(4px);
     display:flex; align-items:center; justify-content:center;
@@ -986,6 +986,11 @@
     #fabNew.fab-on{ display:flex; }
   }
 
+  /* iOS hace zoom automático al enfocar un campo con fuente < 16px y deja la
+     pantalla desfasada (encabezado cortado, franja vacía abajo, scroll lateral). */
+  @media (max-width: 860px){
+    input, select, textarea{ font-size:16px !important; }
+  }
   @media (max-width: 860px){
     .board{
       display:block; max-width: 640px; margin: 0 auto;
@@ -6778,24 +6783,6 @@
   function volverArriba(){
     if((window.scrollY || window.scrollX) && !escribiendo()) window.scrollTo(0, 0);
   }
-  /* Ancla la app y los modales al área realmente visible (visualViewport).
-     En iOS, tras el teclado o los rebotes, el viewport de layout queda
-     desfasado: encabezado cortado arriba y franja vacía abajo. */
-  function ajustarViewport(){
-    const vv = window.visualViewport;
-    const root = document.documentElement.style;
-    if(!vv){ return; }
-    root.setProperty("--vv-h", vv.height + "px");
-    root.setProperty("--vv-top", vv.offsetTop + "px");
-  }
-  if(window.visualViewport){
-    window.visualViewport.addEventListener("resize", ajustarViewport);
-    window.visualViewport.addEventListener("scroll", ajustarViewport);
-  }
-  window.addEventListener("orientationchange", () => setTimeout(ajustarViewport, 200));
-  window.addEventListener("pageshow", ajustarViewport);
-  document.addEventListener("focusout", () => setTimeout(ajustarViewport, 150));
-  ajustarViewport();
   window.addEventListener("scroll", volverArriba, { passive: true });
   document.addEventListener("focusout", () => setTimeout(volverArriba, 120));
   if(window.visualViewport) window.visualViewport.addEventListener("resize", () => setTimeout(volverArriba, 120));
