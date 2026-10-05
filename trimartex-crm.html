@@ -57,7 +57,7 @@
      iPhone (Safari y Chrome), al abrir/cerrar el teclado o rebotar al final
      de una lista, la página quedaba desplazada hacia arriba: el encabezado
      tapado por la barra del navegador y una franja vacía abajo. */
-  #app{ position:fixed; inset:0; display:flex; flex-direction:column; }
+  #app{ position:fixed; left:0; right:0; top:var(--vv-top, 0px); height:var(--vv-h, 100%); display:flex; flex-direction:column; }
 
   /* ---------- Header ---------- */
   header.topbar{
@@ -614,7 +614,8 @@
 
   /* ---------- Modal ---------- */
   .overlay{
-    position: fixed; inset:0; background: rgba(0,0,0,0.55);
+    position: fixed; left:0; right:0; top:var(--vv-top, 0px); height:var(--vv-h, 100%);
+    background: rgba(0,0,0,0.55);
     backdrop-filter: blur(4px);
     display:flex; align-items:center; justify-content:center;
     z-index: 100; opacity:0; pointer-events:none;
@@ -656,7 +657,7 @@
   .modal{ min-width:0; overflow:hidden; }
   @media (max-width: 520px){
     .overlay{ padding: max(28px, env(safe-area-inset-top)) 22px max(28px, env(safe-area-inset-bottom)); }
-    .modal{ max-height: 82vh; max-height: 82dvh; max-width: 440px; }
+    .modal{ max-height: 100%; max-width: 440px; }
     .modal-head{ padding: 16px 18px 12px; }
     .modal-body{ padding: 14px 18px; }
     .modal-foot{ padding: 12px 18px; padding-bottom: 12px; gap:8px; }
@@ -6775,6 +6776,24 @@
   function volverArriba(){
     if((window.scrollY || window.scrollX) && !escribiendo()) window.scrollTo(0, 0);
   }
+  /* Ancla la app y los modales al área realmente visible (visualViewport).
+     En iOS, tras el teclado o los rebotes, el viewport de layout queda
+     desfasado: encabezado cortado arriba y franja vacía abajo. */
+  function ajustarViewport(){
+    const vv = window.visualViewport;
+    const root = document.documentElement.style;
+    if(!vv){ return; }
+    root.setProperty("--vv-h", vv.height + "px");
+    root.setProperty("--vv-top", vv.offsetTop + "px");
+  }
+  if(window.visualViewport){
+    window.visualViewport.addEventListener("resize", ajustarViewport);
+    window.visualViewport.addEventListener("scroll", ajustarViewport);
+  }
+  window.addEventListener("orientationchange", () => setTimeout(ajustarViewport, 200));
+  window.addEventListener("pageshow", ajustarViewport);
+  document.addEventListener("focusout", () => setTimeout(ajustarViewport, 150));
+  ajustarViewport();
   window.addEventListener("scroll", volverArriba, { passive: true });
   document.addEventListener("focusout", () => setTimeout(volverArriba, 120));
   if(window.visualViewport) window.visualViewport.addEventListener("resize", () => setTimeout(volverArriba, 120));
