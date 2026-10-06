@@ -285,6 +285,10 @@
      max-width + margin:auto centren la lista de verdad. */
   .cartera-list-wrap{ height:100%; width:100%; flex:1 1 auto; overflow-y:auto; padding: 16px; }
   .cartera-list{ max-width:900px; width:100%; margin:0 auto; display:flex; flex-direction:column; gap:10px; }
+  .contactados-section{ max-width:900px; width:100%; margin:0 auto 24px; }
+  .contactados-section-title{ display:flex; align-items:center; gap:8px; margin:0 0 10px; font-size:14px; font-weight:600; }
+  .contactados-section-title .count{ opacity:.6; font-weight:500; }
+  .contactados-dot{ width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
   .cliente-card{
     background: var(--surface);
     border: 1px solid var(--border);
@@ -1220,7 +1224,7 @@
       <button data-page="pipeline" class="active">Pipeline</button>
       <button data-page="recontacto">Recontacto<span class="pill-count" id="recontactoCount" style="display:none;">0</span></button>
       <button data-page="cartera">Cartera<span class="pill-count" id="carteraCount" style="display:none;">0</span></button>
-      <button data-page="contactados" id="contactadosToggleBtn" style="display:none;">Contactados<span class="pill-count" id="contactadosCount" style="display:none;">0</span></button>
+      <button data-page="contactados" id="contactadosToggleBtn" style="display:none;">Contactado/Recontacto<span class="pill-count" id="contactadosCount" style="display:none;">0</span></button>
       <button data-page="tareas">Tareas</button>
       <button data-page="reportes" id="reportesToggleBtn">Reportes</button>
       <button data-page="actualizaciones" id="actualizacionesToggleBtn">Actualizaciones</button>
@@ -1887,6 +1891,7 @@
     { key:"leads_tristan",       label:"Leads Tristán",       color:"#bf5af2" },
     { key:"nuevo",               label:"Nuevo",               color:"#8e8e93" },
     { key:"contactado",          label:"Contactado",          color:"#0a84ff" },
+    { key:"en_conversacion",     label:"En conversación",     color:"#5e5ce6" },
     { key:"cotizacion_pendiente",label:"Cotización pendiente",color:"#ff9f0a" },
     { key:"cotizacion_enviada",  label:"Cotización enviada",  color:"#ffd60a" },
     { key:"seguimiento",         label:"Seguimiento",         color:"#5ac8fa" },
@@ -1907,8 +1912,8 @@
      Ningún componente vuelve a mirar state.mode ni la etapa por su cuenta.
 
      Regla de negocio confirmada por el cliente:
-       · Etapas "nuevo" y "contactado" de la cartera compartida: zona de
-         Joaquín. Tristán las ve en solo lectura.
+       · Etapas "nuevo", "contactado" y "en_conversacion" de la cartera
+         compartida: zona de Joaquín. Tristán las ve en solo lectura.
        · "leads_tristan" y de "cotizacion_pendiente" en adelante: zona de
          escritura de Tristán — edita, mueve, elimina, archiva y deshace sin
          límite de tiempo.
@@ -1916,9 +1921,10 @@
        · Joaquín nunca tiene restricciones.
 
      Esto es SOLO la UI: la misma regla está en RLS vía
-     public.puede_editar_lead_tristan() (migración 20260916000002). Si el
+     public.puede_editar_lead_tristan() (migraciones 20260916000002 y
+     20261006000002). Si el
      conjunto de etapas cambia, hay que tocar los dos lados. */
-  const ETAPAS_SOLO_LECTURA_TRISTAN = ["nuevo", "contactado"];
+  const ETAPAS_SOLO_LECTURA_TRISTAN = ["nuevo", "contactado", "en_conversacion"];
 
   function esZonaEscrituraTristan(etapa){
     return !ETAPAS_SOLO_LECTURA_TRISTAN.includes(etapa);
@@ -2282,17 +2288,22 @@
     return activeLeads().filter(l => !l.archived && l.recontacto_active).length;
   }
 
-  // Leads en etapa "Contactado": a cargo de Joaquín en el pipeline normal.
-  // Tristán no los ve como columna del board (no está en TRISTAN_VISIBLE),
-  // pero puede consultarlos en solo lectura vía el toggle "Contactados".
-  function leadsContactadosFlat(){
+  // Leads en etapas "Contactado" y "En conversación": a cargo de Joaquín en
+  // el pipeline normal. Tristán no los ve como columnas del board (no están
+  // en TRISTAN_VISIBLE), pero puede consultarlos en solo lectura vía el
+  // toggle "Contactado/Recontacto".
+  const ETAPAS_CONTACTADOS = ["contactado", "en_conversacion"];
+
+  function leadsContactadosFlat(etapa){
     return state.leads.filter(l =>
-      !l.archived && !l.recontacto_active && l.etapa === "contactado" && matchesSearch(l, state.search) && matchesFilters(l)
-    );
+      !l.archived && !l.recontacto_active &&
+      (etapa ? l.etapa === etapa : ETAPAS_CONTACTADOS.includes(l.etapa)) &&
+      matchesSearch(l, state.search) && matchesFilters(l)
+    ).sort(porOrden);
   }
 
   function contactadosCount(){
-    return state.leads.filter(l => !l.archived && !l.recontacto_active && l.etapa === "contactado").length;
+    return state.leads.filter(l => !l.archived && !l.recontacto_active && ETAPAS_CONTACTADOS.includes(l.etapa)).length;
   }
 
   function matchesSearchCliente(c, q){
@@ -2544,18 +2555,24 @@
     wireCardPedidos(boardEl);
   }
 
-  // Vista de solo lectura para Tristán: lista plana (no kanban, no drag) de
-  // los leads que Joaquín todavía tiene en la etapa "Contactado". Sirve para
-  // dar visibilidad sin permitir mover ni editar nada desde acá.
+  // Vista de solo lectura para Tristán: listas planas (no kanban, no drag)
+  // de los leads que Joaquín todavía tiene en "Contactado" y en "En
+  // conversación", una sección por etapa. Sirve para dar visibilidad sin
+  // permitir mover ni editar nada desde acá.
   function renderContactadosBoard(){
-    const leads = leadsContactadosFlat();
-    const emptyMsg = `Sin leads contactados${state.search ? " para esta búsqueda" : ""}.`;
-    boardEl.innerHTML = `
-      <div class="cartera-list-wrap">
-        <div class="cartera-list">
-          ${leads.length ? leads.map(l => cardHtml(l, false, true)).join("") : `<div class="cliente-empty">${emptyMsg}</div>`}
-        </div>
-      </div>`;
+    const sufijo = state.search ? " para esta búsqueda" : "";
+    const secciones = ETAPAS_CONTACTADOS.map(etapa => {
+      const col = COLUMNS.find(c => c.key === etapa);
+      const leads = leadsContactadosFlat(etapa);
+      return `
+        <div class="contactados-section">
+          <h3 class="contactados-section-title"><span class="contactados-dot" style="background:${col.color}"></span>${escapeHtml(col.label)} <span class="count">${leads.length}</span></h3>
+          <div class="cartera-list">
+            ${leads.length ? leads.map(l => cardHtml(l, false, true)).join("") : `<div class="cliente-empty">Sin leads en ${escapeHtml(col.label)}${sufijo}.</div>`}
+          </div>
+        </div>`;
+    }).join("");
+    boardEl.innerHTML = `<div class="cartera-list-wrap">${secciones}</div>`;
     boardEl.querySelectorAll(".lead-card").forEach(card => {
       card.addEventListener("click", () => openLeadModal(card.dataset.id));
     });
@@ -2880,7 +2897,7 @@
 
   // Clasificación ABC de un lead/cliente: botón que cicla de valor al
   // tocarlo (readOnly=true la muestra sin poder tocarla, para la vista de
-  // solo lectura de Contactados).
+  // solo lectura de Contactado/Recontacto).
   function abcBadgeHtml(value, id, table, readOnly){
     const v = value || "";
     const cls = v ? "abc-" + v.toLowerCase() : "";
@@ -4551,7 +4568,7 @@
   // etapa (usuario nuevo, o etapa agregada después) — nunca se usan para
   // sobrescribir lo que el usuario ya haya guardado.
   const DIAS_ETAPA_DEFAULT = {
-    leads_tristan: 2, nuevo: 2, contactado: 3, cotizacion_pendiente: 3,
+    leads_tristan: 2, nuevo: 2, contactado: 3, en_conversacion: 3, cotizacion_pendiente: 3,
     cotizacion_enviada: 5, seguimiento: 5, pedido_confirmado: 7, entregado: 30, baja: 30,
   };
 
@@ -5190,7 +5207,7 @@
 
   function computeReportMetrics(leadsArr){
     const activos = leadsArr.filter(l => !l.archived);
-    const etapasAvanzadas = ["contactado", "cotizacion_pendiente", "cotizacion_enviada", "seguimiento", ...ETAPAS_TERMINALES];
+    const etapasAvanzadas = ["contactado", "en_conversacion", "cotizacion_pendiente", "cotizacion_enviada", "seguimiento", ...ETAPAS_TERMINALES];
     const avanzados = activos.filter(l => etapasAvanzadas.includes(l.etapa)).length;
     const avance = activos.length ? Math.round((avanzados / activos.length) * 100) : 0;
 
