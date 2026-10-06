@@ -29,6 +29,7 @@ const TIPO_META: Record<string, { label: string; color: string }> = {
   recordatorio_automatico: { label: "Recordatorio", color: "#0a84ff" },
   lead_compartido: { label: "Lead compartido", color: "#30d158" },
   lead_devuelto: { label: "Lead devuelto", color: "#bf5af2" },
+  recontacto_mes: { label: "Hablar este mes", color: "#ff9f0a" },
 };
 
 function escapeHtml(s: string): string {

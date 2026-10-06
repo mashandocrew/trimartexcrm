@@ -802,6 +802,20 @@
   .card-pedido:hover{ background:rgba(255,159,10,0.12); }
   .card-pedido.card-pedido-empty{ border-style:dashed; color:var(--text-dim); background:transparent; }
   div.card-pedido{ cursor:default; }
+  .rc-mes-badge{
+    font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:999px;
+    background: rgba(255,159,10,0.16); color:#ffb340;
+  }
+  .card-motivo{
+    font-size:11.5px; color:var(--text-dim); margin-top:8px; line-height:1.4;
+    border-left:2px solid rgba(255,159,10,0.6); padding:2px 0 2px 8px;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .pill-count.pill-count-alerta{ background:#ff9f0a; color:#1c1c1e; }
+  .rc-mes-form{ display:flex; flex-wrap:wrap; gap:8px; width:100%; }
+  .rc-mes-form select{ flex:0 0 190px; }
+  .rc-mes-form input{ flex:1 1 200px; }
+  .rc-mes-form .rc-mes-actions{ display:flex; gap:8px; width:100%; justify-content:flex-end; }
   .rc-stage-badge{
     font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:999px;
     background: var(--accent-soft); color:#7ab8ff;
@@ -1223,6 +1237,7 @@
     <div class="mode-toggle" id="pageToggle">
       <button data-page="pipeline" class="active">Pipeline</button>
       <button data-page="recontacto">Recontacto<span class="pill-count" id="recontactoCount" style="display:none;">0</span></button>
+      <button data-page="agenda">Por mes<span class="pill-count" id="agendaCount" style="display:none;">0</span></button>
       <button data-page="cartera">Cartera<span class="pill-count" id="carteraCount" style="display:none;">0</span></button>
       <button data-page="contactados" id="contactadosToggleBtn" style="display:none;">Contactado/Recontacto<span class="pill-count" id="contactadosCount" style="display:none;">0</span></button>
       <button data-page="tareas">Tareas</button>
@@ -1963,6 +1978,27 @@
     key: "r" + (i+1), label: "Recontacto " + (i+1), color: "#0a84ff"
   }));
 
+  // Recontacto "Por mes": leads que pidieron que se los llame en un mes
+  // puntual. Siguen con recontacto_active = true (así no vuelven al
+  // pipeline), pero con recontacto_mes cargado salen de las 8 semanas y viven
+  // en la página "Por mes", una columna por mes. recontacto_mes siempre es el
+  // día 1 del mes ("2026-12-01"); las columnas se identifican como "m2026-12".
+  const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  const AGENDA_MESES_FIJOS = 6; // meses que siempre se muestran (desde el actual), tengan leads o no
+  function mesKey(fecha){ return (fecha || "").slice(0, 7); }
+  function mesActualKey(){ return today().slice(0, 7); }
+  function sumarMeses(key, n){
+    const [y, m] = key.split("-").map(Number);
+    const d = new Date(y, m - 1 + n, 1);
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  }
+  function mesLabel(key){
+    const [y, m] = key.split("-").map(Number);
+    return MESES[m - 1] + " " + y;
+  }
+  function tieneMes(lead){ return !!(lead.recontacto_active && lead.recontacto_mes); }
+  function mesLlego(lead){ return tieneMes(lead) && mesKey(lead.recontacto_mes) <= mesActualKey(); }
+
   const ABC_CYCLE = { "": "A", "A": "B", "B": "C", "C": "" }; // click para ciclar Sin clasificar -> A -> B -> C -> Sin clasificar
 
   // Enum completo de rubros: los 5 históricos de leads + cada rubro real ya
@@ -2026,7 +2062,7 @@
   }
 
   function isVencido(lead){
-    return !!(lead.recontacto_active && lead.recontacto_next_date && lead.recontacto_next_date < today());
+    return !!(lead.recontacto_active && !lead.recontacto_mes && lead.recontacto_next_date && lead.recontacto_next_date < today());
   }
 
   const CARTERA_FILTERS = [
@@ -2063,7 +2099,7 @@
     privateMode: false,     // toggle "Gestión Privada" — solo tiene efecto para rol tristan
     clientes: [],
     mode: "joaquin",        // asignado automáticamente por email al loguearse
-    page: "pipeline",       // "pipeline" | "recontacto" | "cartera" | "contactados" | "tareas" | "reportes" | "actualizaciones"
+    page: "pipeline",       // "pipeline" | "recontacto" | "agenda" | "cartera" | "contactados" | "tareas" | "reportes" | "actualizaciones"
     search: "",
     filtros: {              // Etapa 4 — filtros de cartera del pipeline, combinables en AND
       rubros: [],           // subset de RUBROS keys (enum fijo de 5), [] = todos — filtra leads
@@ -2119,6 +2155,7 @@
 
   function currentColumns(){
     if(state.page === "recontacto") return RECONTACTO_STAGES;
+    if(state.page === "agenda") return agendaColumns();
     if(state.privateMode) return COLUMNS.filter(c => c.key !== "leads_tristan");
     return state.mode === "tristan"
       ? COLUMNS.filter(c => TRISTAN_VISIBLE.includes(c.key))
@@ -2273,19 +2310,50 @@
 
   function leadsForRecontactoStage(stageNum){
     return activeLeads().filter(l =>
-      !l.archived && l.recontacto_active &&
+      !l.archived && l.recontacto_active && !l.recontacto_mes &&
       l.recontacto_stage === stageNum && matchesSearch(l, state.search) && matchesFilters(l)
     ).sort(porOrden);
   }
 
+  // Columnas de "Por mes": siempre los próximos AGENDA_MESES_FIJOS meses
+  // (para poder arrastrar a un mes vacío) más cualquier mes posterior que
+  // tenga leads. Los meses ya pasados no tienen columna propia: caen en
+  // "Este mes" marcados como atrasados, para que no se pierdan de vista.
+  function agendaColumns(){
+    const actual = mesActualKey();
+    const keys = new Set();
+    for(let i = 0; i < AGENDA_MESES_FIJOS; i++) keys.add(sumarMeses(actual, i));
+    activeLeads().forEach(l => {
+      if(!l.archived && tieneMes(l) && mesKey(l.recontacto_mes) > actual) keys.add(mesKey(l.recontacto_mes));
+    });
+    return [...keys].sort().map(k => ({
+      key: "m" + k,
+      label: k === actual ? "Este mes · " + mesLabel(k) : mesLabel(k),
+      color: k === actual ? "#ff9f0a" : "#0a84ff",
+    }));
+  }
+
+  function leadsForAgendaMes(key){
+    const actual = mesActualKey();
+    return activeLeads().filter(l => {
+      if(l.archived || !tieneMes(l)) return false;
+      const k = mesKey(l.recontacto_mes);
+      return (key === actual ? k <= actual : k === key) && matchesSearch(l, state.search) && matchesFilters(l);
+    }).sort((a, b) => a.recontacto_mes.localeCompare(b.recontacto_mes) || porOrden(a, b));
+  }
+
   function leadsForColumn(colKey){
-    return state.page === "recontacto"
-      ? leadsForRecontactoStage(Number(colKey.slice(1)))
-      : leadsForPipelineColumn(colKey);
+    if(state.page === "recontacto") return leadsForRecontactoStage(Number(colKey.slice(1)));
+    if(state.page === "agenda") return leadsForAgendaMes(colKey.slice(1));
+    return leadsForPipelineColumn(colKey);
   }
 
   function activeRecontactoCount(){
-    return activeLeads().filter(l => !l.archived && l.recontacto_active).length;
+    return activeLeads().filter(l => !l.archived && l.recontacto_active && !l.recontacto_mes).length;
+  }
+
+  function agendaCount(){
+    return activeLeads().filter(l => !l.archived && tieneMes(l)).length;
   }
 
   // Leads en etapas "Contactado" y "En conversación": a cargo de Joaquín en
@@ -2389,7 +2457,7 @@
   }
 
   function renderAbcFilterBar(){
-    const visible = ["pipeline", "recontacto", "contactados", "cartera"].includes(state.page);
+    const visible = ["pipeline", "recontacto", "agenda", "contactados", "cartera"].includes(state.page);
     abcFilterBarEl.style.display = visible ? "flex" : "none";
     if(!visible) return;
     const filas = filasParaConteoAbc();
@@ -2481,6 +2549,11 @@
     const n = activeRecontactoCount();
     recontactoCountEl.style.display = n > 0 ? "inline-flex" : "none";
     recontactoCountEl.textContent = n;
+    const na = agendaCount();
+    agendaCountEl.style.display = na > 0 ? "inline-flex" : "none";
+    agendaCountEl.textContent = na;
+    // Si a alguno ya le llegó el mes, el contador se pinta de naranja.
+    agendaCountEl.classList.toggle("pill-count-alerta", activeLeads().some(l => !l.archived && mesLlego(l)));
     const total = state.clientes.length;
     carteraCountEl.style.display = total > 0 ? "inline-flex" : "none";
     carteraCountEl.textContent = total;
@@ -2795,17 +2868,20 @@
   function renderBoard(){
     const cols = currentColumns();
     const isRecontacto = state.page === "recontacto";
+    const isAgenda = state.page === "agenda";
     // A pedido del Sr.: Tristán también carga leads directo por columna en
     // sus dos pipelines (el compartido, donde antes solo podía editar
     // resultado/notas/fecha de leads existentes, y su Gestión Privada).
     // currentColumns() ya deja ver solo las columnas que corresponden a
     // cada rol, así que alcanza con no mostrarlo en Recontacto (etapas, no
     // destinos de creación).
-    const canCreateHere = !isRecontacto;
+    const canCreateHere = !isRecontacto && !isAgenda;
     boardEl.innerHTML = cols.map((c, i) => {
       const leads = leadsForColumn(c.key);
       const activeClass = c.key === state.activeMobileColumn ? "mobile-active" : "";
-      const emptyMsg = isRecontacto ? "Sin leads en recontacto acá." : `Sin leads acá${state.search ? " para esta búsqueda" : ""}.`;
+      const emptyMsg = isAgenda ? "Nadie agendado para este mes."
+        : isRecontacto ? "Sin leads en recontacto acá."
+        : `Sin leads acá${state.search ? " para esta búsqueda" : ""}.`;
       const width = state.columnWidths[c.key] || COLUMN_WIDTH_DEFAULT;
       const totalTicket = leads.reduce((sum, l) => sum + (Number(l.ticket) || 0), 0);
       return `
@@ -2966,6 +3042,17 @@
       : `<button type="button" class="card-pedido card-pedido-empty" data-pedido-id="${lead.id}">+ Cargar pedido / cotización solicitada</button>`;
   }
 
+  // Badge de la card en "Por mes": los atrasados (mes ya pasado, caen en la
+  // columna "Este mes") dicen de qué mes vienen; los del mes en curso se
+  // marcan "Hablar ahora".
+  function agendaBadgeHtml(lead){
+    const k = mesKey(lead.recontacto_mes);
+    const actual = mesActualKey();
+    if(k < actual) return `<span class="rc-vencido-badge">Atrasado · ${escapeHtml(mesLabel(k))}</span>`;
+    if(k === actual) return `<span class="rc-mes-badge">Hablar ahora</span>`;
+    return "";
+  }
+
   function cardHtml(lead, isRecontacto, readOnly){
     const wa = toWhatsappLink(lead.telefono);
     const rubroTag = rubroTagAttrs(lead.rubro);
@@ -2984,7 +3071,9 @@
         <span class="card-ticket">${formatARS(lead.ticket)}</span>
         <span class="result-pill result-${lead.resultado}">${escapeHtml(RESULTADOS[lead.resultado] || "Sin respuesta")}</span>
         ${isRecontacto ? `<span class="rc-stage-badge">Semana ${lead.recontacto_stage}/8</span>${isVencido(lead) ? '<span class="rc-vencido-badge">Vencido</span>' : ""}` : ""}
+        ${state.page === "agenda" ? agendaBadgeHtml(lead) : ""}
       </div>
+      ${state.page === "agenda" && lead.recontacto_mes_motivo ? `<div class="card-motivo">${escapeHtml(lead.recontacto_mes_motivo)}</div>` : ""}
       ${isRecontacto && lead.notas ? `<div class="card-notes-preview">${escapeHtml(lead.notas)}</div>` : ""}
       ${!isRecontacto ? cardPedidoHtml(lead, readOnly) : ""}
       <div class="card-bottom">
@@ -3256,7 +3345,7 @@
     if(!lead) return;
     // Doble red: la card de un lead bloqueado ni siquiera engancha el drag,
     // pero el permiso se vuelve a chequear acá antes de tocar la base.
-    if(!puedeEditarLead(lead) || (state.page !== "recontacto" && !puedeMoverAEtapa(targetKey))){
+    if(!puedeEditarLead(lead) || (state.page !== "recontacto" && state.page !== "agenda" && !puedeMoverAEtapa(targetKey))){
       render();
       return;
     }
@@ -3266,6 +3355,14 @@
     if(state.page === "recontacto"){
       const stage = Number(targetKey.slice(1));
       if(lead.recontacto_stage !== stage){ patch.recontacto_stage = stage; cambioEtapa = true; }
+    } else if(state.page === "agenda"){
+      // Arrastrar a otra columna = reprogramar para ese mes.
+      // Reordenar dentro de "Este mes" no le cambia el mes a un atrasado.
+      const destino = targetKey.slice(1);
+      const yaEstaAhi = destino === mesActualKey()
+        ? mesKey(lead.recontacto_mes) <= destino
+        : mesKey(lead.recontacto_mes) === destino;
+      if(!yaEstaAhi){ patch.recontacto_mes = destino + "-01"; cambioEtapa = true; }
     } else {
       if(lead.etapa !== targetKey){ patch.etapa = targetKey; cambioEtapa = true; }
     }
@@ -3284,7 +3381,7 @@
     if(nuevoOrden != null && Number(nuevoOrden) !== Number(lead.orden)) patch.orden = nuevoOrden;
     if(!Object.keys(patch).length){ render(); return; }
 
-    const previo = { etapa: lead.etapa, recontacto_stage: lead.recontacto_stage, orden: lead.orden };
+    const previo = { etapa: lead.etapa, recontacto_stage: lead.recontacto_stage, recontacto_mes: lead.recontacto_mes, orden: lead.orden };
     Object.assign(lead, patch);
     // La vista se queda donde estaba: ya no saltamos a la columna destino.
     render();
@@ -3455,6 +3552,7 @@
   /* ============ Page toggle & role badge ============ */
   const pageToggle = document.getElementById("pageToggle");
   const recontactoCountEl = document.getElementById("recontactoCount");
+  const agendaCountEl = document.getElementById("agendaCount");
   const carteraCountEl = document.getElementById("carteraCount");
   const contactadosCountEl = document.getElementById("contactadosCount");
   const contactadosToggleBtn = document.getElementById("contactadosToggleBtn");
@@ -3604,7 +3702,7 @@
     if(btn.dataset.page === "contactados" && state.mode !== "tristan") return;
     if(btn.dataset.page === "cartera" || btn.dataset.page === "contactados" || btn.dataset.page === "reportes" || btn.dataset.page === "actualizaciones" || btn.dataset.page === "tareas") state.privateMode = false;
     state.page = btn.dataset.page;
-    if(state.page === "pipeline" || state.page === "recontacto") state.activeMobileColumn = currentColumns()[0].key;
+    if(state.page === "pipeline" || state.page === "recontacto" || state.page === "agenda") state.activeMobileColumn = currentColumns()[0].key;
     render();
   });
 
@@ -3990,21 +4088,60 @@
     cierreField.style.display = "block";
     cierreLabel.textContent = "Recontacto";
     cierreSeg.innerHTML = "";
+    recontactoBox.style.display = "flex";
 
     // En solo lectura se informa el estado, sin botones de acción.
     if(soloLectura){
-      recontactoBox.style.display = "flex";
-      recontactoBox.innerHTML = lead.recontacto_active
-        ? `<span class="rc-info">En recontacto: <b>semana ${lead.recontacto_stage} de 8</b></span>`
-        : `<span class="rc-info">Sin recontacto activo.</span>`;
+      recontactoBox.innerHTML = tieneMes(lead)
+        ? `<span class="rc-info">Agendado para <b>${escapeHtml(mesLabel(mesKey(lead.recontacto_mes)))}</b>${lead.recontacto_mes_motivo ? " · " + escapeHtml(lead.recontacto_mes_motivo) : ""}</span>`
+        : lead.recontacto_active
+          ? `<span class="rc-info">En recontacto: <b>semana ${lead.recontacto_stage} de 8</b></span>`
+          : `<span class="rc-info">Sin recontacto activo.</span>`;
+      return;
+    }
+
+    const rerender = () => { renderRecontactoBlock(lead, soloLectura); render(); };
+    const sinMes = { recontacto_mes:null, recontacto_mes_motivo:null };
+
+    // Agendado para un mes ("Por mes").
+    if(tieneMes(lead)){
+      const k = mesKey(lead.recontacto_mes);
+      const estado = k < mesActualKey() ? " (atrasado)" : k === mesActualKey() ? " (este mes)" : "";
+      recontactoBox.innerHTML = `
+        <span class="rc-info">Agendado para <b>${escapeHtml(mesLabel(k))}</b>${estado}${lead.recontacto_mes_motivo ? `<br>Motivo: ${escapeHtml(lead.recontacto_mes_motivo)}` : ""}</span>
+        <button type="button" class="btn btn-ghost" id="rcVerMesBtn">Ver en Por mes</button>
+        <button type="button" class="btn btn-ghost" id="rcReprogramarBtn">Reprogramar</button>
+        <button type="button" class="btn btn-ghost" id="rcSemana1Btn">Pasar a Recontacto semana 1</button>
+        <button type="button" class="btn btn-ghost" id="rcVolverBtn">Volver al pipeline</button>
+        <button type="button" class="btn btn-accent" id="rcCloseBtn">Marcar Pedido confirmado</button>
+      `;
+      document.getElementById("rcVerMesBtn").addEventListener("click", () => {
+        closeLeadModal();
+        state.page = "agenda";
+        state.activeMobileColumn = "m" + (k < mesActualKey() ? mesActualKey() : k);
+        render();
+      });
+      document.getElementById("rcReprogramarBtn").addEventListener("click", () => renderAgendarForm(lead, soloLectura));
+      document.getElementById("rcSemana1Btn").addEventListener("click", () => {
+        patchLead(lead, { ...sinMes, recontacto_stage:1 }, "Lead pasado a Recontacto (semana 1)");
+        rerender();
+      });
+      document.getElementById("rcVolverBtn").addEventListener("click", () => {
+        patchLead(lead, { ...sinMes, recontacto_active:false }, `Lead de vuelta en ${etapaLabel(lead.etapa)}`);
+        rerender();
+      });
+      document.getElementById("rcCloseBtn").addEventListener("click", () => {
+        patchLead(lead, { ...sinMes, etapa:"pedido_confirmado", recontacto_active:false }, "Lead marcado como Pedido confirmado");
+        rerender();
+      });
       return;
     }
 
     if(lead.recontacto_active){
-      recontactoBox.style.display = "flex";
       recontactoBox.innerHTML = `
         <span class="rc-info">En recontacto: <b>semana ${lead.recontacto_stage} de 8</b></span>
         <button type="button" class="btn btn-ghost" id="rcViewBtn">Ver en Recontacto</button>
+        <button type="button" class="btn btn-ghost" id="rcAgendarBtn">Agendar para un mes</button>
         <button type="button" class="btn btn-accent" id="rcCloseBtn">Marcar Pedido confirmado</button>
         <button type="button" class="btn btn-ghost" id="rcStopBtn">Sacar de recontacto</button>
       `;
@@ -4014,26 +4151,58 @@
         state.activeMobileColumn = "r" + lead.recontacto_stage;
         render();
       });
+      document.getElementById("rcAgendarBtn").addEventListener("click", () => renderAgendarForm(lead, soloLectura));
       document.getElementById("rcCloseBtn").addEventListener("click", () => {
         patchLead(lead, { etapa:"pedido_confirmado", recontacto_active:false }, "Lead marcado como Pedido confirmado");
-        renderRecontactoBlock(lead, soloLectura);
-        render();
+        rerender();
       });
       document.getElementById("rcStopBtn").addEventListener("click", () => {
         patchLead(lead, { recontacto_active:false });
-        renderRecontactoBlock(lead, soloLectura);
-        render();
+        rerender();
       });
       return;
     }
 
     // Sin recontacto activo: se puede mandar desde cualquier etapa.
-    recontactoBox.style.display = "flex";
     recontactoBox.innerHTML = `
-      <span class="rc-info">Está en <b>${escapeHtml(etapaLabel(lead.etapa))}</b>. Si todavía no cerró, lo podés mandar a recontacto en vez de esperar.</span>
+      <span class="rc-info">Está en <b>${escapeHtml(etapaLabel(lead.etapa))}</b>. Si todavía no cerró, lo podés mandar a recontacto en vez de esperar, o agendarlo para el mes que te pidió.</span>
+      <button type="button" class="btn btn-ghost" id="rcAgendarBtn">Agendar para un mes</button>
       <button type="button" class="btn btn-accent" id="rcStartBtn">Enviar a recontacto</button>
     `;
+    document.getElementById("rcAgendarBtn").addEventListener("click", () => renderAgendarForm(lead, soloLectura));
     document.getElementById("rcStartBtn").addEventListener("click", () => startRecontacto(lead, soloLectura));
+  }
+
+  // Formulario inline para agendar (o reprogramar) un lead para un mes:
+  // el mes actual y los 11 siguientes, más un motivo opcional.
+  function renderAgendarForm(lead, soloLectura){
+    const actual = mesActualKey();
+    const elegido = tieneMes(lead) && mesKey(lead.recontacto_mes) >= actual
+      ? mesKey(lead.recontacto_mes)
+      : sumarMeses(actual, 1);
+    const opciones = Array.from({length:12}, (_, i) => sumarMeses(actual, i));
+    recontactoBox.innerHTML = `
+      <div class="rc-mes-form">
+        <select id="rcMesSelect" aria-label="Mes">
+          ${opciones.map(k => `<option value="${k}" ${k === elegido ? "selected" : ""}>${escapeHtml(mesLabel(k))}</option>`).join("")}
+        </select>
+        <input type="text" id="rcMesMotivo" maxlength="140" placeholder="Motivo (ej: cierra el balance, vuelve de vacaciones)" value="${escapeHtml(lead.recontacto_mes_motivo || "")}">
+        <div class="rc-mes-actions">
+          <button type="button" class="btn btn-ghost" id="rcMesCancelar">Cancelar</button>
+          <button type="button" class="btn btn-accent" id="rcMesGuardar">Agendar</button>
+        </div>
+      </div>
+    `;
+    document.getElementById("rcMesCancelar").addEventListener("click", () => renderRecontactoBlock(lead, soloLectura));
+    document.getElementById("rcMesGuardar").addEventListener("click", () => {
+      const mes = document.getElementById("rcMesSelect").value;
+      const motivo = document.getElementById("rcMesMotivo").value.trim();
+      const patch = { recontacto_mes: mes + "-01", recontacto_mes_motivo: motivo || null };
+      if(!lead.recontacto_active){ patch.recontacto_active = true; patch.recontacto_stage = 1; }
+      patchLead(lead, patch, `Agendado para ${mesLabel(mes)}`);
+      renderRecontactoBlock(lead, soloLectura);
+      render();
+    });
   }
 
   const historyField = document.getElementById("f_history");
@@ -4546,6 +4715,7 @@
     { key:"recordatorio_automatico", label:"Recordatorio automático", solo:null },
     { key:"lead_compartido", label:"Lead compartido", solo:"joaquin" },
     { key:"lead_devuelto", label:"Lead devuelto por Joaquín", solo:"tristan" },
+    { key:"recontacto_mes", label:"Llegó el mes de recontacto", solo:null },
   ];
   const ABC_AVISO = [{key:"A",label:"A"},{key:"B",label:"B"},{key:"C",label:"C"},{key:"sin",label:"Sin clasificar"}];
 
