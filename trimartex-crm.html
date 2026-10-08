@@ -4281,16 +4281,24 @@
     return etapa;
   }
 
+  // Desde Cotización pendiente un lead del pipeline compartido ya no puede
+  // pasar a la Gestión Privada: Joaquín tiene que ver todo el avance. Misma
+  // regla en sacar_de_recontacto() (migración 20261009000001). Baja queda
+  // afuera: es un lead perdido, no un avance.
+  const ETAPAS_SIN_PASE_A_PRIVADO = ["cotizacion_pendiente", "cotizacion_enviada", "seguimiento", "pedido_confirmado", "entregado"];
+
   // Formulario inline (estilo renderAgendarForm): elegir el espacio de destino.
   function renderSacarForm(lead, soloLectura){
     const desde = state.privateMode ? "privado" : "compartido";
-    const pista = (destino) => `Cae en <b>${escapeHtml(etapaLabel(etapaTrasRecontacto(lead.etapa, destino)))}</b>${destino === "compartido" ? " del pipeline compartido" : " de tu Gestión Privada"}.`;
+    const privadoBloqueado = desde === "compartido" && ETAPAS_SIN_PASE_A_PRIVADO.includes(lead.etapa);
+    const pista = (destino) => `Cae en <b>${escapeHtml(etapaLabel(etapaTrasRecontacto(lead.etapa, destino)))}</b>${destino === "compartido" ? " del pipeline compartido" : " de tu Gestión Privada"}.`
+      + (privadoBloqueado ? " Desde Cotización pendiente no puede pasar a la Gestión Privada." : "");
     recontactoBox.innerHTML = `
       <div class="rc-mes-form">
         <span class="rc-info" id="rcSacarPista">${pista(desde)}</span>
         <select id="rcDestinoSelect" aria-label="Destino">
           <option value="compartido"${desde === "compartido" ? " selected" : ""}>Pipeline compartido</option>
-          <option value="privado"${desde === "privado" ? " selected" : ""}>Mi Gestión Privada</option>
+          ${privadoBloqueado ? "" : `<option value="privado"${desde === "privado" ? " selected" : ""}>Mi Gestión Privada</option>`}
         </select>
         <div class="rc-mes-actions">
           <button type="button" class="btn btn-ghost" id="rcSacarCancelar">Cancelar</button>
