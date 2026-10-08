@@ -1900,6 +1900,16 @@
     return;
   }
 
+  // Si la URL quedó guardada con un #access_token viejo (favorito, acceso
+  // directo, historial), el redirect de Google le encadenaba el token nuevo
+  // detrás del viejo ("#access_token=VIEJO...#access_token=NUEVO"). Supabase
+  // leía el primero, vencido, y volvía al login: loop infinito. Nos quedamos
+  // solo con el último fragmento antes de crear el cliente.
+  if((location.hash.match(/access_token=/g) || []).length > 1){
+    const ultimo = location.hash.slice(location.hash.lastIndexOf("#access_token="));
+    history.replaceState(null, "", location.pathname + location.search + ultimo);
+  }
+
   const supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const COLUMNS = [
@@ -6618,7 +6628,9 @@
   const logoutBtn = document.getElementById("logoutBtn");
 
   googleLoginBtn.addEventListener("click", async () => {
-    await supa.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.href } });
+    // Sin el #hash: si la URL trae un token viejo, Google lo devolvería pegado
+    // al nuevo y el login entraría en loop.
+    await supa.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin + window.location.pathname + window.location.search } });
   });
 
   logoutBtn.addEventListener("click", async () => {
@@ -6906,6 +6918,11 @@
 
   async function handleSession(session){
     state.session = session;
+    // Que el token nunca quede en la barra de direcciones (y por lo tanto en
+    // favoritos o accesos directos), haya funcionado el login o no.
+    if(/access_token=|error_description=/.test(location.hash)){
+      history.replaceState(null, "", location.pathname + location.search);
+    }
 
     if(!session){
       unsubscribeRealtime();
