@@ -286,6 +286,23 @@
   .cartera-list-wrap{ height:100%; width:100%; flex:1 1 auto; overflow-y:auto; padding: 16px; }
   .cartera-list{ max-width:900px; width:100%; margin:0 auto; display:flex; flex-direction:column; gap:10px; }
   .contactados-section{ max-width:900px; width:100%; margin:0 auto 24px; }
+  /* Contactado / En conversación: dos columnas en escritorio, apiladas en
+     celular (con chips de salto arriba). */
+  .contactados-wrap{ max-width:1180px; margin:0 auto; }
+  .contactados-aviso{
+    display:flex; align-items:center; gap:8px; margin:0 0 14px; padding:9px 12px;
+    font-size:12.5px; color:var(--text-dim); background:var(--surface);
+    border:1px solid var(--border); border-radius:10px;
+  }
+  .contactados-aviso b{ color:var(--text); }
+  .contactados-jump{ display:none; gap:8px; margin:0 0 14px; }
+  .contactados-grid{ display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start; }
+  .contactados-grid .contactados-section{ max-width:none; margin:0; }
+  @media (max-width: 760px){
+    .contactados-grid{ grid-template-columns:1fr; gap:0; }
+    .contactados-grid .contactados-section{ margin-bottom:24px; scroll-margin-top:8px; }
+    .contactados-jump{ display:flex; }
+  }
   .contactados-section-title{ display:flex; align-items:center; gap:8px; margin:0 0 10px; font-size:14px; font-weight:600; }
   .contactados-section-title .count{ opacity:.6; font-weight:500; }
   .contactados-dot{ width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
@@ -311,8 +328,12 @@
   .estado-pill{ flex:0 0 auto; font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:999px; white-space:nowrap; }
   .estado-activo{ background: var(--positive-soft); color:#5fe083; }
   .estado-inactivo{ background: rgba(150,150,160,0.14); color:#a9a9b0; }
-  /* Etiqueta "Reactivación JP · <etapa>": el color lo da la columna del
-     pipeline donde está el lead (--etapa-color, inline en la tarjeta). */
+  /* Etiqueta de Cartera con la etapa del lead (sin texto fijo): el color lo da
+     la columna del pipeline donde está el lead (--etapa-color, inline en la
+     tarjeta). Si el lead está en la Gestión Privada de Tristán usa un violeta
+     propio (lavanda con borde punteado), distinto del de Leads Tristán
+     (#bf5af2) y del de En conversación (#5e5ce6), para no confundirse con
+     ninguna etapa. */
   .reactivacion-tag{
     display:inline-flex; align-items:center; gap:5px; max-width:100%;
     margin-top:5px; font-size:10.5px; font-weight:700; letter-spacing:.01em;
@@ -321,6 +342,11 @@
     background: color-mix(in srgb, var(--etapa-color) 16%, transparent);
   }
   .reactivacion-tag::before{ content:""; flex:0 0 auto; width:6px; height:6px; border-radius:50%; background: var(--etapa-color); }
+  .reactivacion-tag-privado{
+    --etapa-color:#c9b8ff;
+    border:1px dashed rgba(201,184,255,0.55);
+    background: rgba(201,184,255,0.13);
+  }
   .cliente-empty{ text-align:center; color:var(--text-faint); font-size:13px; padding:40px 10px; }
 
   /* Clasificación ABC: pastilla circular clickeable, un click cicla
@@ -538,6 +564,11 @@
     position: relative;
   }
   .lead-card:hover{ border-color: #38383d; }
+  /* Punto naranja: el lead acaba de salir de Recontacto. Se apaga al abrirlo. */
+  .card-recontacto-dot{
+    position:absolute; top:7px; right:7px; width:9px; height:9px; border-radius:50%;
+    background:#ff9f0a; box-shadow:0 0 0 3px rgba(255,159,10,0.22); pointer-events:none;
+  }
   .lead-card:active{ cursor:grabbing; }
   .lead-card.dragging{ opacity: 0; }
   .lead-card.drop-in{ animation: dropPulse .35s ease; }
@@ -1239,7 +1270,7 @@
       <button data-page="recontacto">Recontacto<span class="pill-count" id="recontactoCount" style="display:none;">0</span></button>
       <button data-page="agenda">Por mes<span class="pill-count" id="agendaCount" style="display:none;">0</span></button>
       <button data-page="cartera">Cartera<span class="pill-count" id="carteraCount" style="display:none;">0</span></button>
-      <button data-page="contactados" id="contactadosToggleBtn" style="display:none;">Contactado/Recontacto<span class="pill-count" id="contactadosCount" style="display:none;">0</span></button>
+      <button data-page="contactados" id="contactadosToggleBtn" style="display:none;">Contactado/En conversación<span class="pill-count" id="contactadosCount" style="display:none;">0</span></button>
       <button data-page="tareas">Tareas</button>
       <button data-page="reportes" id="reportesToggleBtn">Reportes</button>
       <button data-page="actualizaciones" id="actualizacionesToggleBtn">Actualizaciones</button>
@@ -2369,7 +2400,7 @@
   // Leads en etapas "Contactado" y "En conversación": a cargo de Joaquín en
   // el pipeline normal. Tristán no los ve como columnas del board (no están
   // en TRISTAN_VISIBLE), pero puede consultarlos en solo lectura vía el
-  // toggle "Contactado/Recontacto".
+  // pestaña "Contactado/En conversación".
   const ETAPAS_CONTACTADOS = ["contactado", "en_conversacion"];
 
   function leadsContactadosFlat(etapa){
@@ -2591,8 +2622,11 @@
   function reactivacionTagHtml(lead){
     if(!lead) return "";
     const col = COLUMNS.find(x => x.key === lead.etapa) || { label: lead.etapa, color: "#8e8e93" };
-    const etapa = col.label + (state.privados.includes(lead) ? " (privado)" : "");
-    return `<div><span class="reactivacion-tag" style="--etapa-color:${col.color}" title="Está como lead en ${escapeHtml(etapa)}">Reactivación JP · ${escapeHtml(etapa)}</span></div>`;
+    // Solo la etapa. Si el lead está en la Gestión Privada de Tristán la
+    // etiqueta toma un violeta propio (color y borde fijos en el CSS).
+    const privado = state.privados.includes(lead);
+    const title = "Está como lead en " + col.label + (privado ? " (Gestión Privada)" : "");
+    return `<div><span class="reactivacion-tag${privado ? " reactivacion-tag-privado" : ""}"${privado ? "" : ` style="--etapa-color:${col.color}"`} title="${escapeHtml(title)}">${escapeHtml(col.label)}</span></div>`;
   }
 
   function clienteCardHtml(c, reactivacion){
@@ -2641,23 +2675,40 @@
   // Vista de solo lectura para Tristán: listas planas (no kanban, no drag)
   // de los leads que Joaquín todavía tiene en "Contactado" y en "En
   // conversación", una sección por etapa. Sirve para dar visibilidad sin
-  // permitir mover ni editar nada desde acá.
+  // permitir mover ni editar nada desde acá. No incluye los leads que están
+  // en Recontacto (esos viven en la pestaña Recontacto). En escritorio van en
+  // dos columnas; en celular se apilan y unos chips arriba saltan a cada una.
   function renderContactadosBoard(){
     const sufijo = state.search ? " para esta búsqueda" : "";
-    const secciones = ETAPAS_CONTACTADOS.map(etapa => {
-      const col = COLUMNS.find(c => c.key === etapa);
-      const leads = leadsContactadosFlat(etapa);
-      return `
-        <div class="contactados-section">
+    const porEtapa = ETAPAS_CONTACTADOS.map(etapa => ({
+      etapa, col: COLUMNS.find(c => c.key === etapa), leads: leadsContactadosFlat(etapa),
+    }));
+    const secciones = porEtapa.map(({ etapa, col, leads }) => `
+        <div class="contactados-section" data-seccion="${etapa}">
           <h3 class="contactados-section-title"><span class="contactados-dot" style="background:${col.color}"></span>${escapeHtml(col.label)} <span class="count">${leads.length}</span></h3>
           <div class="cartera-list">
             ${leads.length ? leads.map(l => cardHtml(l, false, true)).join("") : `<div class="cliente-empty">Sin leads en ${escapeHtml(col.label)}${sufijo}.</div>`}
           </div>
-        </div>`;
-    }).join("");
-    boardEl.innerHTML = `<div class="cartera-list-wrap">${secciones}</div>`;
+        </div>`).join("");
+    const chips = porEtapa.map(({ etapa, col, leads }) =>
+      `<button type="button" class="mobile-tab" data-jump="${etapa}"><span class="contactados-dot" style="background:${col.color}"></span> ${escapeHtml(col.label)} <span class="count">${leads.length}</span></button>`
+    ).join("");
+    boardEl.innerHTML = `
+      <div class="cartera-list-wrap">
+        <div class="contactados-wrap">
+          <div class="contactados-aviso">Solo lectura · estos leads están a cargo de <b>Joaquín</b>. Los que están en Recontacto no aparecen acá: miralos en la pestaña Recontacto.</div>
+          <div class="contactados-jump">${chips}</div>
+          <div class="contactados-grid">${secciones}</div>
+        </div>
+      </div>`;
     boardEl.querySelectorAll(".lead-card").forEach(card => {
       card.addEventListener("click", () => openLeadModal(card.dataset.id));
+    });
+    boardEl.querySelectorAll("[data-jump]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const sec = boardEl.querySelector(`.contactados-section[data-seccion="${btn.dataset.jump}"]`);
+        if(sec) sec.scrollIntoView({ behavior:"smooth", block:"start" });
+      });
     });
   }
 
@@ -2983,7 +3034,7 @@
 
   // Clasificación ABC de un lead/cliente: botón que cicla de valor al
   // tocarlo (readOnly=true la muestra sin poder tocarla, para la vista de
-  // solo lectura de Contactado/Recontacto).
+  // solo lectura de Contactado/En conversación).
   function abcBadgeHtml(value, id, table, readOnly){
     const v = value || "";
     const cls = v ? "abc-" + v.toLowerCase() : "";
@@ -3068,6 +3119,7 @@
     const rubroTag = rubroTagAttrs(lead.rubro);
     return `
     <article class="lead-card${readOnly ? " lead-card-readonly" : ""}" data-id="${lead.id}"${readOnly ? ' data-readonly="1" title="Solo lectura: este lead está en una etapa a cargo de Joaquín"' : ""}>
+      ${lead.viene_de_recontacto && !isRecontacto ? '<span class="card-recontacto-dot" title="Salió de Recontacto" aria-label="Salió de Recontacto"></span>' : ""}
       <div class="card-top">
         <div class="card-ident">
           <div class="card-company">${escapeHtml(lead.empresa)}</div>
@@ -3596,7 +3648,9 @@
     papeleraBtn.style.display = (!isCartera && !isReportes && !isTareas) ? "flex" : "none";
     newClienteBtn.style.display = isCartera ? "flex" : "none";
     newTareaBtn.style.display = isTareas ? "flex" : "none";
-    contactadosToggleBtn.style.display = (state.mode === "tristan" && !isPrivate && !isReportes && !isTareas) ? "" : "none";
+    // Tristán ve la pestaña Contactado/En conversación también estando en
+    // Gestión Privada: al tocarla sale del modo privado (ver pageToggle).
+    contactadosToggleBtn.style.display = (state.mode === "tristan" && !isReportes && !isTareas) ? "" : "none";
     privadaToggleBtn.style.display = (state.mode === "tristan" && !isReportes && !isTareas) ? "flex" : "none";
     privadaToggleBtn.classList.toggle("active-private", isPrivate);
     privadaToggleLabel.textContent = isPrivate ? "Volver al pipeline" : "Gestión Privada";
@@ -4059,6 +4113,16 @@
 
     leadOverlay.classList.add("open");
     setTimeout(() => { if(!fields.empresa.disabled) fields.empresa.focus(); }, 60);
+
+    // Abrir la ficha apaga el punto naranja de "salió de Recontacto". Va por
+    // RPC porque Tristán no puede hacer UPDATE en las etapas de Joaquín; no se
+    // espera la respuesta (si falla, el punto vuelve en la próxima carga).
+    if(lead && lead.viene_de_recontacto){
+      lead.viene_de_recontacto = false;
+      supa.rpc("marcar_recontacto_visto", { p_lead_id: lead.id, p_privado: state.privateMode })
+        .then(({ error }) => { if(error) console.error(error); });
+      render();
+    }
   }
 
   const cierreField = document.getElementById("f_cierre");
@@ -4071,6 +4135,9 @@
   // escribe historial a mano.
   async function patchLead(lead, patch, successToast){
     Object.assign(lead, patch);
+    // Salir de Recontacto sin cambiar de etapa prende la marca (la prende el
+    // trigger trg_viene_de_recontacto); se refleja acá para no esperar a recargar.
+    if(patch.recontacto_active === false && !("etapa" in patch)) lead.viene_de_recontacto = true;
     if(successToast) toast(successToast);
     const { error } = await supa.from(activeTable()).update(patch).eq("id", lead.id);
     if(error){ console.error(error); toast("No se pudo guardar el cambio"); }
@@ -4107,6 +4174,11 @@
         : lead.recontacto_active
           ? `<span class="rc-info">En recontacto: <b>semana ${lead.recontacto_stage} de 8</b></span>`
           : `<span class="rc-info">Sin recontacto activo.</span>`;
+      // Tristán puede retirar de Recontacto también los leads de Joaquín.
+      if(puedeSacarDeRecontacto(lead)){
+        recontactoBox.insertAdjacentHTML("beforeend", `<button type="button" class="btn btn-ghost" id="rcSacarBtn">Sacar de recontacto…</button>`);
+        document.getElementById("rcSacarBtn").addEventListener("click", () => renderSacarForm(lead, soloLectura));
+      }
       return;
     }
 
@@ -4122,7 +4194,9 @@
         <button type="button" class="btn btn-ghost" id="rcVerMesBtn">Ver en Por mes</button>
         <button type="button" class="btn btn-ghost" id="rcReprogramarBtn">Reprogramar</button>
         <button type="button" class="btn btn-ghost" id="rcSemana1Btn">Pasar a Recontacto semana 1</button>
-        <button type="button" class="btn btn-ghost" id="rcVolverBtn">Volver al pipeline</button>
+        ${puedeSacarDeRecontacto(lead)
+          ? `<button type="button" class="btn btn-ghost" id="rcSacarBtn">Sacar de recontacto…</button>`
+          : `<button type="button" class="btn btn-ghost" id="rcVolverBtn">Volver al pipeline</button>`}
         <button type="button" class="btn btn-accent" id="rcCloseBtn">Marcar Pedido confirmado</button>
       `;
       document.getElementById("rcVerMesBtn").addEventListener("click", () => {
@@ -4136,10 +4210,13 @@
         patchLead(lead, { ...sinMes, recontacto_stage:1 }, "Lead pasado a Recontacto (semana 1)");
         rerender();
       });
-      document.getElementById("rcVolverBtn").addEventListener("click", () => {
+      const rcVolverBtn = document.getElementById("rcVolverBtn");
+      if(rcVolverBtn) rcVolverBtn.addEventListener("click", () => {
         patchLead(lead, { ...sinMes, recontacto_active:false }, `Lead de vuelta en ${etapaLabel(lead.etapa)}`);
         rerender();
       });
+      const rcSacarMesBtn = document.getElementById("rcSacarBtn");
+      if(rcSacarMesBtn) rcSacarMesBtn.addEventListener("click", () => renderSacarForm(lead, soloLectura));
       document.getElementById("rcCloseBtn").addEventListener("click", () => {
         patchLead(lead, { ...sinMes, etapa:"pedido_confirmado", recontacto_active:false }, "Lead marcado como Pedido confirmado");
         rerender();
@@ -4153,7 +4230,9 @@
         <button type="button" class="btn btn-ghost" id="rcViewBtn">Ver en Recontacto</button>
         <button type="button" class="btn btn-ghost" id="rcAgendarBtn">Agendar para un mes</button>
         <button type="button" class="btn btn-accent" id="rcCloseBtn">Marcar Pedido confirmado</button>
-        <button type="button" class="btn btn-ghost" id="rcStopBtn">Sacar de recontacto</button>
+        ${puedeSacarDeRecontacto(lead)
+          ? `<button type="button" class="btn btn-ghost" id="rcSacarBtn">Sacar de recontacto…</button>`
+          : `<button type="button" class="btn btn-ghost" id="rcStopBtn">Sacar de recontacto</button>`}
       `;
       document.getElementById("rcViewBtn").addEventListener("click", () => {
         closeLeadModal();
@@ -4166,10 +4245,13 @@
         patchLead(lead, { etapa:"pedido_confirmado", recontacto_active:false }, "Lead marcado como Pedido confirmado");
         rerender();
       });
-      document.getElementById("rcStopBtn").addEventListener("click", () => {
+      const rcStopBtn = document.getElementById("rcStopBtn");
+      if(rcStopBtn) rcStopBtn.addEventListener("click", () => {
         patchLead(lead, { recontacto_active:false });
         rerender();
       });
+      const rcSacarBtn = document.getElementById("rcSacarBtn");
+      if(rcSacarBtn) rcSacarBtn.addEventListener("click", () => renderSacarForm(lead, soloLectura));
       return;
     }
 
@@ -4181,6 +4263,73 @@
     `;
     document.getElementById("rcAgendarBtn").addEventListener("click", () => renderAgendarForm(lead, soloLectura));
     document.getElementById("rcStartBtn").addEventListener("click", () => startRecontacto(lead, soloLectura));
+  }
+
+  // Tristán saca de Recontacto vía sacar_de_recontacto() (RPC security
+  // definer): la RLS no lo deja hacer UPDATE en las etapas de Joaquín, y
+  // además puede elegir adónde va. Joaquín sigue con el patch directo.
+  function puedeSacarDeRecontacto(lead){
+    return state.mode === "tristan" && !!lead && !!lead.recontacto_active;
+  }
+
+  // Misma regla que la RPC: el lead vuelve a la etapa en la que estaba antes
+  // de Recontacto (Recontacto no toca la etapa); si no hay una utilizable,
+  // 'nuevo'; 'leads_tristan' no existe en la Gestión Privada.
+  function etapaTrasRecontacto(etapa, destino){
+    if(!etapa || etapa === "cerrado") return "nuevo";
+    if(etapa === "leads_tristan" && destino === "privado") return "nuevo";
+    return etapa;
+  }
+
+  // Formulario inline (estilo renderAgendarForm): elegir el espacio de destino.
+  function renderSacarForm(lead, soloLectura){
+    const desde = state.privateMode ? "privado" : "compartido";
+    const pista = (destino) => `Cae en <b>${escapeHtml(etapaLabel(etapaTrasRecontacto(lead.etapa, destino)))}</b>${destino === "compartido" ? " del pipeline compartido" : " de tu Gestión Privada"}.`;
+    recontactoBox.innerHTML = `
+      <div class="rc-mes-form">
+        <span class="rc-info" id="rcSacarPista">${pista(desde)}</span>
+        <select id="rcDestinoSelect" aria-label="Destino">
+          <option value="compartido"${desde === "compartido" ? " selected" : ""}>Pipeline compartido</option>
+          <option value="privado"${desde === "privado" ? " selected" : ""}>Mi Gestión Privada</option>
+        </select>
+        <div class="rc-mes-actions">
+          <button type="button" class="btn btn-ghost" id="rcSacarCancelar">Cancelar</button>
+          <button type="button" class="btn btn-accent" id="rcSacarConfirmar">Confirmar</button>
+        </div>
+      </div>
+    `;
+    const sel = document.getElementById("rcDestinoSelect");
+    sel.addEventListener("change", () => {
+      document.getElementById("rcSacarPista").innerHTML = pista(sel.value);
+    });
+    document.getElementById("rcSacarCancelar").addEventListener("click", () => renderRecontactoBlock(lead, soloLectura));
+    document.getElementById("rcSacarConfirmar").addEventListener("click", async (e) => {
+      const destino = sel.value;
+      const destinoLabel = destino === "compartido" ? "el pipeline compartido" : "tu Gestión Privada";
+      // Los leads de etapas a cargo de Joaquín no son de Tristán: pide
+      // confirmación y la RPC le avisa a Joaquín.
+      if(!puedeEditarLead(lead) &&
+         !confirm(`"${lead.empresa}" está en una etapa a cargo de Joaquín. ¿Sacarlo de Recontacto y dejarlo en ${destinoLabel}? Se le avisa a Joaquín.`)) return;
+      e.currentTarget.disabled = true;
+      if(await sacarDeRecontacto(lead, destino)) closeLeadModal();
+      else renderRecontactoBlock(lead, soloLectura);
+    });
+  }
+
+  async function sacarDeRecontacto(lead, destino){
+    const desde = state.privateMode ? "privado" : "compartido";
+    const { error } = await supa.rpc("sacar_de_recontacto", { p_lead_id: lead.id, p_desde: desde, p_destino: destino });
+    if(error){ console.error(error); toast("No se pudo sacar el lead de Recontacto"); return false; }
+    // Se recarga lo que cambió (id nuevo y/o orden al fondo de la columna) en
+    // vez de reconstruirlo a mano.
+    if(desde === destino){
+      if(desde === "privado") await loadPrivados(); else await loadLeads();
+    } else {
+      await Promise.all([loadLeads(), loadPrivados()]);
+    }
+    toast(`${lead.empresa} salió de Recontacto — quedó en ${etapaLabel(etapaTrasRecontacto(lead.etapa, destino))} (${destino === "compartido" ? "pipeline compartido" : "Gestión Privada"})`);
+    render();
+    return true;
   }
 
   // Formulario inline para agendar (o reprogramar) un lead para un mes:
@@ -4715,8 +4864,9 @@
   const cfgCompartirConOtro = document.getElementById("cfg_compartir_con_otro");
 
   // Todos los tipos de aviso que existen hoy. lead_compartido solo le llega
-  // a Joaquín (compartir_lead_tristan()) y lead_devuelto solo a Tristán
-  // (devolver_lead_tristan()): a cada uno se le oculta el checkbox que no
+  // a Joaquín (compartir_lead_tristan()), lead_retirado también (Tristán
+  // retira un lead del Recontacto compartido, sacar_de_recontacto()) y
+  // lead_devuelto solo a Tristán (devolver_lead_tristan()): a cada uno se le oculta el checkbox que no
   // tendría ningún efecto para él.
   const TIPOS_AVISO = [
     { key:"seguimiento_vencido", label:"Seguimiento vencido", solo:null },
@@ -4725,6 +4875,7 @@
     { key:"recordatorio_automatico", label:"Recordatorio automático", solo:null },
     { key:"lead_compartido", label:"Lead compartido", solo:"joaquin" },
     { key:"lead_devuelto", label:"Lead devuelto por Joaquín", solo:"tristan" },
+    { key:"lead_retirado", label:"Lead retirado de Recontacto por Tristán", solo:"joaquin" },
     { key:"recontacto_mes", label:"Llegó el mes de recontacto", solo:null },
   ];
   const ABC_AVISO = [{key:"A",label:"A"},{key:"B",label:"B"},{key:"C",label:"C"},{key:"sin",label:"Sin clasificar"}];
@@ -5058,6 +5209,7 @@
   // seguimiento), así que usa el acento de la app en vez de un color ABC.
   function notifToastIcono(n){
     if(n.tipo === "lead_compartido") return { letra:"→", claseAbc:"", style:"background:var(--accent-soft);color:var(--accent);" };
+    if(n.tipo === "lead_retirado") return { letra:"↗", claseAbc:"", style:"background:var(--accent-soft);color:var(--accent);" };
     if(n.tipo === "lead_devuelto") return { letra:"←", claseAbc:"", style:"background:var(--accent-soft);color:var(--accent);" };
     const abc = notifAbc(n);
     const claseAbc = abc === "A" ? "abc-a" : abc === "B" ? "abc-b" : abc === "C" ? "abc-c" : "";
@@ -6021,8 +6173,8 @@
 
   // Wizard "Enviar como lead": 1) destino (solo si hay más de uno — hoy solo
   // Tristán, que tiene Gestión Privada), 2) confirmación. El cliente siempre
-  // se queda en Cartera, con la etiqueta "Reactivación JP" mientras el lead
-  // esté abierto (reemplaza a la vieja opción "Eliminar de cartera").
+  // se queda en Cartera, con una etiqueta que muestra la etapa del lead
+  // mientras esté abierto (reemplaza a la vieja opción "Eliminar de cartera").
   let enviarWizardState = null;
 
   function enviarWizardPasos(){
@@ -6088,7 +6240,7 @@
       html = `<p class="wizard-q">Confirmá el envío</p>
         <div class="wizard-summary">
           <b>${escapeHtml(c.empresa)}</b> se crea como lead en <b>${escapeHtml(destinoLabel)}</b>.<br>
-          En Cartera <b>se mantiene</b>, con la etiqueta <b>Reactivación JP</b> y la etapa del lead.
+          En Cartera <b>se mantiene</b>, con una etiqueta que muestra la etapa del lead.
         </div>
         <div class="field" style="margin-bottom:0;">
           <label for="in_enviar_etapa">Etapa inicial</label>
@@ -6194,7 +6346,7 @@
     const etapaLabel = (COLUMNS.find(col => col.key === etapaDestino) || {}).label || etapaDestino;
 
     closeEnviarWizard();
-    toast(`${c.empresa} enviado a ${destinoLabel} (${etapaLabel}) — queda en Cartera como Reactivación JP`);
+    toast(`${c.empresa} enviado a ${destinoLabel} (${etapaLabel}) — queda en Cartera con la etapa del lead`);
   }
 
   enviarPipelineBtn.addEventListener("click", openEnviarWizard);
