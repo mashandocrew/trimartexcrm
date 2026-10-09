@@ -1,27 +1,84 @@
--- Trimartex CRM — dos reglas de negocio pedidas por Joaquín:
+-- Trimartex CRM — un lead del pipeline compartido que llegó a "Cotización
+-- pendiente" ya no puede pasar a la Gestión Privada de Tristán: Joaquín tiene
+-- que ver todo el avance.
 --
---  1) Desde "Cotización pendiente" en adelante un lead del pipeline compartido
---     ya no puede pasar a la Gestión Privada de Tristán: Joaquín tiene que ver
---     todo el avance. El único camino compartido -> privado que admite esas
---     etapas es sacar_de_recontacto() (devolver_lead_tristan() solo trabaja
---     con 'leads_tristan'), así que la regla vive ahí. "Baja" queda afuera: es
---     un lead perdido, no un avance.
---     Los leads que Tristán avanza dentro de su propia Gestión Privada no se
---     tocan.
+-- No alcanza con mirar la etapa actual: desde Cotización pendiente Tristán
+-- puede mover el lead a "Leads Tristán" (es su zona) y devolverlo, o pasarlo a
+-- Baja, mandarlo a Recontacto y sacarlo hacia privado. Por eso la regla es una
+-- marca permanente, leads.paso_por_cotizacion: se prende al llegar a
+-- Cotización pendiente o cualquier etapa posterior (Baja no cuenta: no es un
+-- avance) y nunca se apaga, ni siquiera si el cliente la manda en false.
 --
---  2) Todo lead que llega a "Entregado" (compartido o privado) queda en
---     Cartera como Activo. Hasta ahora solo pasaba con los leads que habían
---     salido de Cartera (reactivacion_actualizar_cliente(), 20260923000003);
---     un cliente nuevo nunca entraba. trg_entregado_a_cartera() cubre los que
---     no tienen origen_cliente_id: busca el cliente por nombre de empresa (como
---     devolver_lead_tristan()) y si no existe lo crea; en ambos casos deja el
---     vínculo en origen_cliente_id, así el resto del ciclo (Baja -> Inactivo)
---     lo sigue manejando reactivacion_actualizar_cliente().
+-- La respetan los dos únicos caminos compartido -> privado:
+--   * sacar_de_recontacto() (20261008000001).
+--   * devolver_lead_tristan() — también el "deshacer" de 40 s post-eliminación,
+--     que usa la misma RPC. Joaquín sigue sin restricciones.
+-- Los leads que Tristán avanza dentro de su propia Gestión Privada no se tocan.
 --
--- Requiere 20261008000001_recontacto_destino_y_marca.sql.
+-- Requiere 20261009000001.
 
--- 1) sacar_de_recontacto: misma función que 20261008000001 + la regla de
---    etapas que ya no pueden pasar a privado.
+-- 1) Marca permanente.
+alter table public.leads
+  add column if not exists paso_por_cotizacion boolean not null default false;
+
+create or replace function public.trg_paso_por_cotizacion()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if tg_op = 'UPDATE' and old.paso_por_cotizacion then
+    new.paso_por_cotizacion := true;
+  end if;
+  if new.etapa in ('cotizacion_pendiente', 'cotizacion_enviada', 'seguimiento', 'pedido_confirmado', 'entregado') then
+    new.paso_por_cotizacion := true;
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.trg_paso_por_cotizacion() from public, anon, authenticated;
+
+create or replace trigger leads_paso_por_cotizacion
+  before insert or update on public.leads
+  for each row execute function public.trg_paso_por_cotizacion();
+
+-- 2) Las marcas internas (viene_de_recontacto, paso_por_cotizacion) no son un
+--    movimiento del lead: un cambio que toca solo eso no pisa updated_at.
+create or replace function public.trg_leads_set_updated_at()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_new jsonb := to_jsonb(new);
+  v_old jsonb := to_jsonb(old);
+begin
+  if v_new ? 'viene_de_recontacto'
+     and v_new is distinct from v_old
+     and (v_new - 'viene_de_recontacto' - 'paso_por_cotizacion') = (v_old - 'viene_de_recontacto' - 'paso_por_cotizacion') then
+    return new;
+  end if;
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+-- 3) Backfill: la etapa actual o cualquier paso previo registrado en el
+--    historial.
+update public.leads l
+  set paso_por_cotizacion = true
+  where not l.paso_por_cotizacion
+    and (
+      l.etapa in ('cotizacion_pendiente', 'cotizacion_enviada', 'seguimiento', 'pedido_confirmado', 'entregado')
+      or exists (
+        select 1 from public.lead_history h
+        where h.lead_id = l.id
+          and public.etapa_desde_label(h.label) in ('cotizacion_pendiente', 'cotizacion_enviada', 'seguimiento', 'pedido_confirmado', 'entregado')
+      )
+    );
+
+-- 4) sacar_de_recontacto: misma función que 20261008000001 + el bloqueo.
 create or replace function public.sacar_de_recontacto(p_lead_id uuid, p_desde text, p_destino text)
 returns uuid
 language plpgsql
@@ -63,10 +120,9 @@ begin
     v_etapa := vp.etapa::text;
   end if;
 
-  -- Desde Cotización pendiente, lo compartido se queda compartido.
-  if p_desde = 'compartido' and p_destino = 'privado'
-     and v_etapa in ('cotizacion_pendiente', 'cotizacion_enviada', 'seguimiento', 'pedido_confirmado', 'entregado') then
-    raise exception 'Desde Cotización pendiente el lead no puede pasar a la Gestión Privada';
+  -- Un lead compartido que pasó por Cotización pendiente se queda compartido.
+  if p_desde = 'compartido' and p_destino = 'privado' and v.paso_por_cotizacion then
+    raise exception 'Este lead ya pasó por Cotización pendiente: no puede pasar a la Gestión Privada';
   end if;
 
   v_etapa_dest := case
@@ -173,88 +229,100 @@ $$;
 revoke execute on function public.sacar_de_recontacto(uuid, text, text) from public, anon;
 grant execute on function public.sacar_de_recontacto(uuid, text, text) to authenticated;
 
--- 2) Entregado -> Cartera. BEFORE para dejar el vínculo en la misma fila sin
---    un UPDATE extra (que movería updated_at y la auditoría). En el mismo
---    UPDATE, el AFTER de reactivacion_actualizar_cliente() ve el vínculo y
---    deja el cliente Activo con la fecha de último contacto.
-create or replace function public.trg_entregado_a_cartera()
-returns trigger
+-- 5) devolver_lead_tristan: misma función que 20260928000002 + el bloqueo.
+create or replace function public.devolver_lead_tristan(p_lead_id uuid)
+returns text
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
+  v public.leads%rowtype;
+  v_origen text;
   v_cliente uuid;
+  v_privado_id uuid;
+  v_es_joaquin boolean;
+  v_tristan_email text;
 begin
-  if new.etapa <> 'entregado' or new.trashed_at is not null or new.origen_cliente_id is not null then
-    return new;
-  end if;
-  if tg_op = 'UPDATE' and old.etapa = 'entregado' then
-    return new;
+  select exists (
+    select 1 from public.usuarios_autorizados u
+    where u.email = (select auth.jwt() ->> 'email') and u.rol = 'joaquin'
+  ) into v_es_joaquin;
+
+  if not (public.is_tristan() or v_es_joaquin) then
+    raise exception 'No tenés permiso para devolver leads';
   end if;
 
-  select c.id into v_cliente from public.clientes c
-  where lower(trim(c.empresa)) = lower(trim(new.empresa))
-  order by c.trashed_at nulls first, c.created_at
-  limit 1;
+  select * into v from public.leads where id = p_lead_id for update;
+  if not found then
+    raise exception 'Lead % no encontrado', p_lead_id;
+  end if;
+  if v.etapa <> 'leads_tristan' then
+    raise exception 'Solo se pueden devolver leads de la columna Leads Tristán';
+  end if;
+  if not v_es_joaquin and v.created_by is distinct from auth.uid() then
+    raise exception 'Solo podés devolver leads tuyos';
+  end if;
+  if not v_es_joaquin and v.paso_por_cotizacion then
+    raise exception 'Este lead ya pasó por Cotización pendiente: no se puede devolver';
+  end if;
 
-  if v_cliente is not null then
-    update public.clientes
-      set trashed_at = null, estado = 'activo', ultimo_contacto_at = current_date
-      where id = v_cliente;
+  v_origen := coalesce(v.origen, case when v.fuente = 'Cartera de clientes' then 'cartera' else 'privado_tristan' end);
+
+  if v_origen = 'cartera' then
+    v_cliente := v.origen_cliente_id;
+    if v_cliente is null then
+      select c.id into v_cliente from public.clientes c
+      where lower(trim(c.empresa)) = lower(trim(v.empresa))
+      order by c.trashed_at nulls first, c.created_at
+      limit 1;
+    end if;
+
+    if v_cliente is not null then
+      update public.clientes set trashed_at = null, estado = 'inactivo' where id = v_cliente;
+    else
+      insert into public.clientes (
+        empresa, contacto, telefono, contacto2_nombre, contacto2_telefono,
+        notas, clasificacion_abc, created_by
+      ) values (
+        v.empresa, v.contacto, v.telefono, v.contacto2_nombre, v.contacto2_telefono,
+        v.notas, v.clasificacion_abc, v.created_by
+      );
+    end if;
   else
-    insert into public.clientes (
+    insert into public.leads_privados_tristan (
       empresa, contacto, telefono, contacto2_nombre, contacto2_telefono, rubro,
-      notas, clasificacion_abc, created_by, estado, ultimo_contacto_at
+      ticket, fuente, fecha_contacto, resultado, notas, etapa, cierre,
+      recontacto_active, recontacto_stage, recontacto_next_date,
+      clasificacion_abc, created_by, origen_cliente_id, pedido_presupuestar
     ) values (
-      new.empresa, coalesce(new.contacto, ''), coalesce(new.telefono, ''), new.contacto2_nombre, new.contacto2_telefono, new.rubro::text,
-      coalesce(new.notas, ''), new.clasificacion_abc, new.created_by, 'activo', current_date
+      v.empresa, v.contacto, v.telefono, v.contacto2_nombre, v.contacto2_telefono, v.rubro,
+      v.ticket, v.fuente, v.fecha_contacto, v.resultado, v.notas, 'nuevo', v.cierre,
+      v.recontacto_active, v.recontacto_stage, v.recontacto_next_date,
+      v.clasificacion_abc, v.created_by, v.origen_cliente_id, v.pedido_presupuestar
     )
-    returning id into v_cliente;
+    returning id into v_privado_id;
   end if;
 
-  -- origen_lead_id apunta a leads: solo existe la fila en un UPDATE del
-  -- pipeline compartido (en un INSERT todavía no está creada).
-  if tg_op = 'UPDATE' and tg_table_name = 'leads' then
-    update public.clientes set origen_lead_id = new.id where id = v_cliente and origen_lead_id is null;
+  update public.clientes set origen_lead_id = null where origen_lead_id = p_lead_id;
+  delete from public.leads where id = p_lead_id;
+
+  if v_es_joaquin then
+    select email into v_tristan_email from public.usuarios_autorizados where rol = 'tristan' limit 1;
+    if v_tristan_email is not null then
+      insert into public.notificaciones (destinatario_email, tipo, lead_privado_id, titulo, mensaje)
+      values (
+        v_tristan_email, 'lead_devuelto', v_privado_id,
+        'Joaquín te devolvió un lead',
+        'Joaquín sacó "' || v.empresa || '" de Leads Tristán y lo devolvió a '
+          || case when v_origen = 'cartera' then 'Cartera.' else 'tu Gestión Privada (columna Nuevo).' end
+      );
+    end if;
   end if;
 
-  new.origen_cliente_id := v_cliente;
-  return new;
+  return v_origen;
 end;
 $$;
 
-revoke execute on function public.trg_entregado_a_cartera() from public, anon, authenticated;
-
-create or replace trigger leads_entregado_a_cartera
-  before insert or update of etapa, trashed_at on public.leads
-  for each row execute function public.trg_entregado_a_cartera();
-
-create or replace trigger leads_privados_entregado_a_cartera
-  before insert or update of etapa, trashed_at on public.leads_privados_tristan
-  for each row execute function public.trg_entregado_a_cartera();
-
--- Backfill: entregados que hoy no están en Cartera (por nombre de empresa) se
--- dan de alta como Activos. No se toca el lead (sin vínculo) para no mover su
--- updated_at.
-insert into public.clientes (
-  empresa, contacto, telefono, contacto2_nombre, contacto2_telefono, rubro,
-  notas, clasificacion_abc, created_by, estado, ultimo_contacto_at
-)
-select distinct on (lower(trim(l.empresa)))
-  l.empresa, coalesce(l.contacto, ''), coalesce(l.telefono, ''), l.contacto2_nombre, l.contacto2_telefono, l.rubro::text,
-  coalesce(l.notas, ''), l.clasificacion_abc, l.created_by, 'activo', current_date
-from (
-  select empresa, contacto, telefono, contacto2_nombre, contacto2_telefono, rubro, notas,
-         clasificacion_abc, created_by, etapa, trashed_at, origen_cliente_id
-    from public.leads
-  union all
-  select empresa, contacto, telefono, contacto2_nombre, contacto2_telefono, rubro, notas,
-         clasificacion_abc, created_by, etapa, trashed_at, origen_cliente_id
-    from public.leads_privados_tristan
-) l
-where l.etapa = 'entregado' and l.trashed_at is null and l.origen_cliente_id is null
-  and not exists (
-    select 1 from public.clientes c where lower(trim(c.empresa)) = lower(trim(l.empresa))
-  )
-order by lower(trim(l.empresa));
+revoke execute on function public.devolver_lead_tristan(uuid) from public, anon;
+grant execute on function public.devolver_lead_tristan(uuid) to authenticated;

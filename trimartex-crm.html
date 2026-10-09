@@ -4020,12 +4020,14 @@
     // siga en "Leads Tristán", es decir, antes de que Joaquín lo trabaje.
     // (Controla la barra de 40 s post-eliminación, no el botón Eliminar.)
     const puedeDeshacer = state.mode === "tristan" && !state.privateMode && !isNew && !!lead
-      && lead.etapa === "leads_tristan" && lead.created_by === state.session.user.id;
+      && lead.etapa === "leads_tristan" && lead.created_by === state.session.user.id
+      && !pasoPorCotizacion(lead);
     leadDeshacible = puedeDeshacer;
     // "Devolver" saca el lead de Leads Tristán y lo vuelve a poner donde
-    // estaba (Cartera o Gestión Privada). Tristán con los suyos, Joaquín con todos.
+    // estaba (Cartera o Gestión Privada). Tristán con los suyos que nunca
+    // llegaron a Cotización pendiente; Joaquín con todos.
     const puedeDevolver = !state.privateMode && !isNew && !!lead && lead.etapa === "leads_tristan"
-      && (state.mode === "joaquin" || lead.created_by === state.session.user.id);
+      && (state.mode === "joaquin" || (lead.created_by === state.session.user.id && !pasoPorCotizacion(lead)));
     const devolverHtml = puedeDevolver
       ? `<button class="btn btn-ghost" id="devolverBtn">↩ Devolver a ${origenDeLead(lead) === "cartera" ? "Cartera" : "Gestión Privada"}</button>`
       : "";
@@ -4281,18 +4283,24 @@
     return etapa;
   }
 
-  // Desde Cotización pendiente un lead del pipeline compartido ya no puede
-  // pasar a la Gestión Privada: Joaquín tiene que ver todo el avance. Misma
-  // regla en sacar_de_recontacto() (migración 20261009000001). Baja queda
-  // afuera: es un lead perdido, no un avance.
+  // Un lead del pipeline compartido que llegó a Cotización pendiente (o más
+  // allá) ya no puede pasar a la Gestión Privada: Joaquín tiene que ver todo
+  // el avance. La marca leads.paso_por_cotizacion es permanente (aunque el
+  // lead vuelva a Leads Tristán o pase a Baja) y la hacen cumplir
+  // sacar_de_recontacto() y devolver_lead_tristan() (migración
+  // 20261009000002). La etapa se mira también para el caso de un lead recién
+  // movido cuya marca todavía no llegó del servidor.
   const ETAPAS_SIN_PASE_A_PRIVADO = ["cotizacion_pendiente", "cotizacion_enviada", "seguimiento", "pedido_confirmado", "entregado"];
+  function pasoPorCotizacion(lead){
+    return !!lead && (!!lead.paso_por_cotizacion || ETAPAS_SIN_PASE_A_PRIVADO.includes(lead.etapa));
+  }
 
   // Formulario inline (estilo renderAgendarForm): elegir el espacio de destino.
   function renderSacarForm(lead, soloLectura){
     const desde = state.privateMode ? "privado" : "compartido";
-    const privadoBloqueado = desde === "compartido" && ETAPAS_SIN_PASE_A_PRIVADO.includes(lead.etapa);
+    const privadoBloqueado = desde === "compartido" && pasoPorCotizacion(lead);
     const pista = (destino) => `Cae en <b>${escapeHtml(etapaLabel(etapaTrasRecontacto(lead.etapa, destino)))}</b>${destino === "compartido" ? " del pipeline compartido" : " de tu Gestión Privada"}.`
-      + (privadoBloqueado ? " Desde Cotización pendiente no puede pasar a la Gestión Privada." : "");
+      + (privadoBloqueado ? " Ya pasó por Cotización pendiente: no puede pasar a la Gestión Privada." : "");
     recontactoBox.innerHTML = `
       <div class="rc-mes-form">
         <span class="rc-info" id="rcSacarPista">${pista(desde)}</span>
