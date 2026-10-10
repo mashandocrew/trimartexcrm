@@ -4286,9 +4286,9 @@
   // Un lead del pipeline compartido que llegó a Cotización pendiente (o más
   // allá) ya no puede pasar a la Gestión Privada: Joaquín tiene que ver todo
   // el avance. La marca leads.paso_por_cotizacion es permanente (aunque el
-  // lead vuelva a Leads Tristán o pase a Baja) y la hacen cumplir
-  // sacar_de_recontacto() y devolver_lead_tristan() (migración
-  // 20261009000002). La etapa se mira también para el caso de un lead recién
+  // lead vuelva a Leads Tristán o pase a Baja) y el servidor la hace cumplir
+  // con un trigger sobre leads que cubre Sacar de recontacto y Devolver
+  // (migración 20261009000002). La etapa se mira también para el caso de un lead recién
   // movido cuya marca todavía no llegó del servidor.
   const ETAPAS_SIN_PASE_A_PRIVADO = ["cotizacion_pendiente", "cotizacion_enviada", "seguimiento", "pedido_confirmado", "entregado"];
   function pasoPorCotizacion(lead){
