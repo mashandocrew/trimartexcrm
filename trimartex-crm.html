@@ -2019,6 +2019,11 @@
     key: "r" + (i+1), label: "Recontacto " + (i+1), color: "#0a84ff"
   }));
 
+  // Colores de la etiqueta de la Cartera para Recontacto 1..8 (un tono por
+  // semana, del cian al violeta) y para los agendados "Por mes".
+  const RECONTACTO_SEMANA_COLORS = ["#64d2ff","#40c8e0","#0a84ff","#3d7bff","#5e5ce6","#7d5ce6","#9b5de5","#bf5af2"];
+  const RECONTACTO_MES_COLOR = "#ff9f0a";
+
   // Recontacto "Por mes": leads que pidieron que se los llame en un mes
   // puntual. Siguen con recontacto_active = true (así no vuelven al
   // pipeline), pero con recontacto_mes cargado salen de las 8 semanas y viven
@@ -2621,9 +2626,20 @@
 
   function reactivacionTagHtml(lead){
     if(!lead) return "";
-    const col = COLUMNS.find(x => x.key === lead.etapa) || { label: lead.etapa, color: "#8e8e93" };
-    // Solo la etapa. Si el lead está en la Gestión Privada de Tristán la
-    // etiqueta toma un violeta propio (color y borde fijos en el CSS).
+    let col = COLUMNS.find(x => x.key === lead.etapa) || { label: lead.etapa, color: "#8e8e93" };
+    // Un lead en Recontacto conserva su etapa de origen (p. ej. "contactado"),
+    // pero su lugar real es la semana (1-8) o el mes agendado: eso es lo que
+    // se muestra, con un color por semana.
+    if(lead.recontacto_active){
+      if(lead.recontacto_mes){
+        col = { label: "Recontacto · " + mesLabel(mesKey(lead.recontacto_mes)), color: RECONTACTO_MES_COLOR };
+      } else {
+        const n = Math.min(Math.max(Number(lead.recontacto_stage) || 1, 1), RECONTACTO_SEMANA_COLORS.length);
+        col = { label: "Recontacto " + n, color: RECONTACTO_SEMANA_COLORS[n - 1] };
+      }
+    }
+    // Si el lead está en la Gestión Privada de Tristán la etiqueta toma un
+    // violeta propio (color y borde fijos en el CSS).
     const privado = state.privados.includes(lead);
     const title = "Está como lead en " + col.label + (privado ? " (Gestión Privada)" : "");
     return `<div><span class="reactivacion-tag${privado ? " reactivacion-tag-privado" : ""}"${privado ? "" : ` style="--etapa-color:${col.color}"`} title="${escapeHtml(title)}">${escapeHtml(col.label)}</span></div>`;
